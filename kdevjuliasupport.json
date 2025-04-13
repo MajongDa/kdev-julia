@@ -1,7 +1,7 @@
 {
     "KPlugin": {
-        "Categoty": "Language Support",
-        "Description": "Julia Language Supprt",
+        "Category": "Language Support",
+        "Description": "Julia Language Support",
         "Id": "kdev-julia",
         "Name": "Julia Support",
         "ServiceTypes": [
@@ -14,8 +14,22 @@
     "X-KDevelop-Languages": [
         "Julia"
     ],
-    "X-KDevelop-Mode": "NoGUI",
+    "X-KDevelop-Mode": "GUI",
     "X-KDevelop-SupportedMimeTypes": [
-        "text/julia"
-    ]
+        "text/x-julia",
+        "application/x-julia"
+    ],
+    "X-KDevelop-FileExtensions": [
+        "jl"
+    ],
+    "X-KDevelop-LoadMode": "AlwaysOn",
+    "X-KDevelop-Server-Configuration": {
+        "julia": {
+            "use": "julia",
+            "command": "julia --startup-file=no -e \"using LanguageServer; runserver()\"",
+            "highlightingModeRegex": "^Julia$",
+            "url": "stdio://Julia",
+            "rootIndicationFilePatterns": ["*.jl", "Project.toml"]
+        }
+    }
 }

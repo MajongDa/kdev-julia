@@ -46,6 +46,7 @@ set(Julia_PREFIX "/home/majong/.juliaup/bin/julia-1.11.3")
 
 set(kdevjulialanguagesupport_PART_SRCS
     julialanguagesupport.cpp
+    juliahighlighting.cpp
 )
 
 ecm_qt_declare_logging_category(kdevjulialanguagesupport_PART_SRCS
