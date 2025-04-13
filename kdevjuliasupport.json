@@ -1,0 +1,21 @@
+{
+    "KPlugin": {
+        "Categoty": "Language Support",
+        "Description": "Julia Language Supprt",
+        "Id": "kdev-julia",
+        "Name": "Julia Support",
+        "ServiceTypes": [
+            "KDevelop/Plugin"
+        ]
+    },
+    "X-KDevelop-Interfaces": [
+        "ILanguageSupport"
+    ],
+    "X-KDevelop-Languages": [
+        "Julia"
+    ],
+    "X-KDevelop-Mode": "NoGUI",
+    "X-KDevelop-SupportedMimeTypes": [
+        "text/julia"
+    ]
+}

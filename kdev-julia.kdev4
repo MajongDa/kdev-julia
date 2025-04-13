@@ -1,3 +1,4 @@
 [Project]
-Name=kdev-julia
+CreatedFrom=CMakeLists.txt
 Manager=KDevCMakeManager
+Name=kdev-julia

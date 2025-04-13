@@ -1,9 +1,0 @@
-{
-    "KPlugin": {
-        "Description": "kdev-julia",
-        "Id": "kdev-julia",
-        "Name": "kdev-julia"
-    },
-    "X-KDevelop-Category": "Global",
-    "X-KDevelop-Mode": "GUI"
-}
