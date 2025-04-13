@@ -23,7 +23,6 @@ target_sources(
     lspclientcompletion.cpp
     lspclientconfigpage.cpp
     lspclienthover.cpp
-    lspclientplugin.cpp
     lspclientpluginview.cpp
     lspclientserver.cpp
     lspclientservermanager.cpp
