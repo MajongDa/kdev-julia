@@ -22,7 +22,6 @@
     "X-KDevelop-FileExtensions": [
         "jl"
     ],
-    "X-KDevelop-LoadMode": "AlwaysOn",
     "X-KDevelop-Server-Configuration": {
         "julia": {
             "use": "julia",
