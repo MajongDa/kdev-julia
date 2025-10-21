@@ -1,8 +1,13 @@
 {
     "KPlugin": {
+        "Authors": [
+            {
+                "Email" : "dobukhowsky@gmail.com",
+                "Name" : "Danil Obuhowsky"
+            }
+        ],
         "Category": "Language Support",
         "Description": "Julia Language Support",
-        "Id": "kdev-julia",
         "Name": "Julia Support",
         "ServiceTypes": [
             "KDevelop/Plugin"
@@ -14,21 +19,8 @@
     "X-KDevelop-Languages": [
         "Julia"
     ],
-    "X-KDevelop-Mode": "GUI",
+    "X-KDevelop-Mode": "NoGUI",
     "X-KDevelop-SupportedMimeTypes": [
-        "text/x-julia",
-        "application/x-julia"
-    ],
-    "X-KDevelop-FileExtensions": [
-        "jl"
-    ],
-    "X-KDevelop-Server-Configuration": {
-        "julia": {
-            "use": "julia",
-            "command": "julia --startup-file=no -e \"using LanguageServer; runserver()\"",
-            "highlightingModeRegex": "^Julia$",
-            "url": "stdio://Julia",
-            "rootIndicationFilePatterns": ["*.jl", "Project.toml"]
-        }
-    }
+        "text/julia"
+    ]
 }

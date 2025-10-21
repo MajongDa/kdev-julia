@@ -42,7 +42,7 @@ find_package(KF6 ${KF_MIN_VERSION} REQUIRED COMPONENTS
 
 #Julia part
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/FindJulia.cmake")
-set(Julia_PREFIX "/home/majong/.juliaup/bin/julia-1.11.3")
+set(Julia_PREFIX "$HOME/.juliaup/bin/julia-1.11.3")
 
 set(kdevjulialanguagesupport_PART_SRCS
     julialanguagesupport.cpp
@@ -58,7 +58,7 @@ ecm_qt_declare_logging_category(kdevjulialanguagesupport_PART_SRCS
     DESCRIPTION "KDevelop plugin: Julia language support"
     EXPORT KDEVJULIA
 )
-kdevplatform_add_plugin(kdevjulialanguagesupport
+kdevplatform_add_plugin( kdevjulialanguagesupport
     JSON kdevjuliasupport.json
     SOURCES ${kdevjulialanguagesupport_PART_SRCS}
     )
@@ -72,6 +72,6 @@ target_link_libraries(kdevjulialanguagesupport
     KF6::TextEditor
 )
 
-add_subdirectory(lspclient)
+#add_subdirectory(lspclient)
 
 feature_summary(WHAT ALL FATAL_ON_MISSING_REQUIRED_PACKAGES)

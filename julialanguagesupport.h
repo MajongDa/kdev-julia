@@ -1,5 +1,5 @@
-#ifndef KDEVPYTHONLANGUAGESUPPORT_H
-#define KDEVPYTHONLANGUAGESUPPORT_H
+#ifndef KDEVJULIALANGUAGESUPPORT_H
+#define KDEVJULIALANGUAGESUPPORT_H
 
 #include <interfaces/iplugin.h>
 #include <interfaces/ilanguagecheckprovider.h>
@@ -41,20 +41,20 @@ public:
     KDevelop::ParseJob* createParseJob(const KDevelop::IndexedString& url) override;
     
     /*The code highlighter*/
-    KDevelop::ICodeHighlighting* codeHighlighting() const override;
+    // KDevelop::ICodeHighlighting* codeHighlighting() const override;
 
-    KDevelop::ContextMenuExtension contextMenuExtension(KDevelop::Context* context, QWidget* parent) override;
+    // KDevelop::ContextMenuExtension contextMenuExtension(KDevelop::Context* context, QWidget* parent) override;
 
     static LanguageSupport* self();
 
     /// Tells whether this plugin is enabled for the given file.
     static bool enabledForFile(const QUrl& url);
 
-    int configPages() const override;
-    KDevelop::ConfigPage* configPage(int number, QWidget* parent) override;
+    // int configPages() const override;
+    // KDevelop::ConfigPage* configPage(int number, QWidget* parent) override;
 
-    int perProjectConfigPages() const override;
-    KDevelop::ConfigPage* perProjectConfigPage(int number, const KDevelop::ProjectConfigOptions& options, QWidget* parent) override;
+    // int perProjectConfigPages() const override;
+    // KDevelop::ConfigPage* perProjectConfigPage(int number, const KDevelop::ProjectConfigOptions& options, QWidget* parent) override;
 
 public Q_SLOTS:
     void documentOpened(KDevelop::IDocument*);
