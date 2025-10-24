@@ -41,13 +41,18 @@ find_package(KF6 ${KF_MIN_VERSION} REQUIRED COMPONENTS
 )
 
 #Julia part
-list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/FindJulia.cmake")
-set(Julia_PREFIX "$HOME/.juliaup/bin/julia-1.11.3")
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}")
+find_package(Julia REQUIRED)
+configure_file(kdevjuliaversion.h.cmake "${CMAKE_CURRENT_BINARY_DIR}/kdevjuliaversion.h" @ONLY)
 
 set(kdevjulialanguagesupport_PART_SRCS
     julialanguagesupport.cpp
     juliahighlighting.cpp
+    projectconfig/projectconfigpage.cpp
+    juliaexecutionlauncher.cpp
+    juliaexecutionjob.cpp
 )
+
 
 ecm_qt_declare_logging_category(kdevjulialanguagesupport_PART_SRCS
     HEADER juliadebug.h
@@ -58,6 +63,10 @@ ecm_qt_declare_logging_category(kdevjulialanguagesupport_PART_SRCS
     DESCRIPTION "KDevelop plugin: Julia language support"
     EXPORT KDEVJULIA
 )
+ki18n_wrap_ui(kdevjulialanguagesupport_PART_SRCS
+    projectconfig/projectconfig.ui
+)
+
 kdevplatform_add_plugin( kdevjulialanguagesupport
     JSON kdevjuliasupport.json
     SOURCES ${kdevjulialanguagesupport_PART_SRCS}
@@ -67,11 +76,15 @@ target_link_libraries(kdevjulialanguagesupport
     KDev::Language
     KDev::Interfaces
     KDev::Util
+    KDev::OutputView
     KF6::Service
     KF6::ThreadWeaver
     KF6::TextEditor
 )
 
 #add_subdirectory(lspclient)
+install(FILES juliastartupscript.jl DESTINATION ${KDE_INSTALL_DATADIR}/kdevjuliasupport)
+install(FILES graphics/FilePlotDisplay.jl DESTINATION ${KDE_INSTALL_DATADIR}/kdevjuliasupport/graphics)
+install(FILES graphics/SocketPlotDisplay.jl DESTINATION ${KDE_INSTALL_DATADIR}/kdevjuliasupport/graphics)
 
 feature_summary(WHAT ALL FATAL_ON_MISSING_REQUIRED_PACKAGES)

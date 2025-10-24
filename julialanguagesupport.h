@@ -43,7 +43,7 @@ public:
     /*The code highlighter*/
     // KDevelop::ICodeHighlighting* codeHighlighting() const override;
 
-    // KDevelop::ContextMenuExtension contextMenuExtension(KDevelop::Context* context, QWidget* parent) override;
+    KDevelop::ContextMenuExtension contextMenuExtension(KDevelop::Context* context, QWidget* parent) override;
 
     static LanguageSupport* self();
 
@@ -53,11 +53,12 @@ public:
     // int configPages() const override;
     // KDevelop::ConfigPage* configPage(int number, QWidget* parent) override;
 
-    // int perProjectConfigPages() const override;
-    // KDevelop::ConfigPage* perProjectConfigPage(int number, const KDevelop::ProjectConfigOptions& options, QWidget* parent) override;
+    int perProjectConfigPages() const override;
+    KDevelop::ConfigPage* perProjectConfigPage(int number, const KDevelop::ProjectConfigOptions& options, QWidget* parent) override;
 
 public Q_SLOTS:
     void documentOpened(KDevelop::IDocument*);
+    void executeCurrentJuliaFile();
 
 private:
     static LanguageSupport* m_self;

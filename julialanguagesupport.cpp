@@ -24,11 +24,23 @@
 #include <KTextEditor/Document>
 #include <KTextEditor/View>
 
-#include <julialanguagesupport.h>
-#include <juliahighlighting.hpp>
+#include "julialanguagesupport.h"
+#include "juliahighlighting.hpp"
+#include "projectconfig/projectconfigpage.h"
+#include "juliaexecutionlauncher.h"
+#include "juliaexecutionjob.h"
+#include "kdevjuliaversion.h"
+#include <executescript/iexecutescriptplugin.h>
+#include <interfaces/launchconfigurationtype.h>
+#include <interfaces/icore.h>
+#include <interfaces/iplugincontroller.h>
+#include <interfaces/iruncontroller.h>
 
 #include <QDebug>
 #include <QProcess>
+#include <QAction>
+#include <KLocalizedString>
+#include <qassert.h>
 #include "juliadebug.h"
 
 using namespace KDevelop;
@@ -39,17 +51,19 @@ namespace Julia
 {
 LanguageSupport* LanguageSupport::m_self = nullptr;
 
-// KDevelop::ContextMenuExtension LanguageSupport::contextMenuExtension(Context* context, QWidget* parent)
-// {
-//     ContextMenuExtension cm;
-//     EditorContext *ec = dynamic_cast<KDevelop::EditorContext *>(context);
-//
-//     if (ec && ICore::self()->languageController()->languagesForUrl(ec->url()).contains(this)) {
-//         // It's a Julia file, let's add our context menu.
-//         // TODO: Add any Julia-specific context menu items here
-//     }
-//     return cm;
-// }
+KDevelop::ContextMenuExtension LanguageSupport::contextMenuExtension(Context* context, QWidget* parent)
+{
+    ContextMenuExtension cm;
+    EditorContext *ec = dynamic_cast<KDevelop::EditorContext *>(context);
+
+    if (ec && ICore::self()->languageController()->languagesForUrl(ec->url()).contains(this)) {
+        // It's a Julia file, let's add our context menu.
+        QAction* executeAction = new QAction(QIcon::fromTheme(QStringLiteral("system-run")), i18n("Execute Julia Script"), parent);
+        connect(executeAction, &QAction::triggered, this, &LanguageSupport::executeCurrentJuliaFile);
+        cm.addAction(ContextMenuExtension::BuildGroup, executeAction);
+    }
+    return cm;
+}
 
 LanguageSupport::LanguageSupport(QObject* parent, const KPluginMetaData& metaData, const QVariantList& args)
     : KDevelop::IPlugin(QStringLiteral("julialanguagesupport"), parent, metaData)
@@ -59,17 +73,28 @@ LanguageSupport::LanguageSupport(QObject* parent, const KPluginMetaData& metaDat
 
     qDebug(KDEV_JULIA) << "Julia language support plugin loaded!";
     m_self = this;
-    
+
     // Initialize syntax highlighting
     //m_highlighting = new Highlighting(this);
-    
+
     // Check if Julia Language Server is installed
     checkJuliaLanguageServer();
-    
+
+    // Register the Julia execution launcher
+    IExecuteScriptPlugin* iface = KDevelop::ICore::self()->pluginController()
+                                  ->pluginForExtension(QStringLiteral("org.kdevelop.IExecuteScriptPlugin"))->extension<IExecuteScriptPlugin>();
+    Q_ASSERT(iface);
+    KDevelop::LaunchConfigurationType* type = core()->runController()
+                                                  ->launchConfigurationTypeForId(iface->scriptAppConfigTypeId());
+    Q_ASSERT(type);
+    type->addLauncher(new JuliaExecutionLauncher());
+    qCDebug(KDEV_JULIA) << "Julia execution launcher registered";
+
+
     // Connect to document opened signal
-    //QObject::connect(ICore::self()->documentController(),
-    //&IDocumentController::documentOpened, this,
-    //&LanguageSupport::documentOpened);
+    QObject::connect(ICore::self()->documentController(),
+    &IDocumentController::documentOpened, this,
+    &LanguageSupport::documentOpened);
 }
 
 void LanguageSupport::checkJuliaLanguageServer()
@@ -155,10 +180,10 @@ bool LanguageSupport::enabledForFile(const QUrl& url)
     // Check if the file is a Julia file (.jl extension)
     return url.toString().endsWith(QLatin1String(".jl"));
 }
-//
+
 // int LanguageSupport::configPages() const
 // {
-//     return 1; // We provide one config page
+//     return 0; // We provide one config page
 // }
 //
 // KDevelop::ConfigPage* LanguageSupport::configPage(int number, QWidget* parent)
@@ -169,20 +194,58 @@ bool LanguageSupport::enabledForFile(const QUrl& url)
 //     }
 //     return nullptr;
 // }
-//
-// int LanguageSupport::perProjectConfigPages() const
-// {
-//     return 1; // We provide one per-project config page
-// }
-//
-// KDevelop::ConfigPage* LanguageSupport::perProjectConfigPage(int number, const KDevelop::ProjectConfigOptions& options, QWidget* parent)
-// {
-//     if (number == 0) {
-//         // TODO: Create and return a Julia project config page
-//         // return new Julia::ProjectConfigPage(this, options, parent);
-//     }
-//     return nullptr;
-// }
+
+int LanguageSupport::perProjectConfigPages() const
+{
+    return 1; // We provide one per-project config page
+}
+
+KDevelop::ConfigPage* LanguageSupport::perProjectConfigPage(int number, const KDevelop::ProjectConfigOptions& options, QWidget* parent)
+{
+    if (number == 0) {
+        return new Julia::ProjectConfigPage(this, options, parent);
+    }
+    return nullptr;
+}
+
+void LanguageSupport::executeCurrentJuliaFile()
+{
+    auto document = KDevelop::ICore::self()->documentController()->activeDocument();
+    if (!document) {
+        qCWarning(KDEV_JULIA) << "No active document to execute";
+        return;
+    }
+
+    // Get project configuration
+    QString interpreter = QStringLiteral(JULIA_EXECUTABLE); // default
+    int graphicsMethod = 0; // file-based by default
+    QString graphicsDir = QStringLiteral("/tmp/graphics");
+    QString socketHost = QStringLiteral("localhost");
+    int socketPort = 8080;
+
+    if (auto project = KDevelop::ICore::self()->projectController()->findProjectForUrl(document->url())) {
+        KConfigGroup config = project->projectConfiguration()->group(QStringLiteral("Juliasupport"));
+        interpreter = config.readEntry("interpreter", QStringLiteral(JULIA_EXECUTABLE));
+        graphicsMethod = config.readEntry("graphicsMethod", 0);
+        graphicsDir = config.readEntry("graphicsFileDir", QStringLiteral("/tmp/graphics"));
+        socketHost = config.readEntry("socketHost", QStringLiteral("localhost"));
+        socketPort = config.readEntry("socketPort", 8080);
+    }
+
+    // Create execution job with graphics redirection
+    QStringList interpreterList = {interpreter};
+    QString scriptPath = document->url().toLocalFile();
+    QStringList arguments; // empty for now
+    QUrl workingDirectory = QUrl::fromLocalFile(QFileInfo(scriptPath).absolutePath());
+    QString environmentProfileName; // empty for default
+
+    auto* job = new JuliaExecutionJob(interpreterList, scriptPath, 
+        arguments, workingDirectory, environmentProfileName, graphicsMethod, graphicsDir, socketHost,
+        socketPort);
+
+    // Start the job
+    KDevelop::ICore::self()->runController()->registerJob(job);
+}
 
 }
 

@@ -1,0 +1,24 @@
+/*
+    SPDX-FileCopyrightText: 2025 Your Name <your.email@example.com>
+
+    SPDX-License-Identifier: GPL-2.0-or-later
+*/
+
+#ifndef KDEVJULIA_VERSION_H
+#define KDEVJULIA_VERSION_H
+
+#define JULIA_VERSION_MAJOR @Julia_VERSION_MAJOR@
+#define JULIA_VERSION_MAJOR_STR "@Julia_VERSION_MAJOR@"
+
+#define JULIA_VERSION_MINOR @Julia_VERSION_MINOR@
+#define JULIA_VERSION_MINOR_STR "@Julia_VERSION_MINOR@"
+
+#define JULIA_VERSION_PATCH @Julia_VERSION_PATCH@
+#define JULIA_VERSION_PATCH_STR "@Julia_VERSION_PATCH@"
+
+#define JULIA_VERSION QT_VERSION_CHECK(@Julia_VERSION_MAJOR@, @Julia_VERSION_MINOR@, @Julia_VERSION_PATCH@)
+#define JULIA_VERSION_STR "@Julia_VERSION_MAJOR@.@Julia_VERSION_MINOR@.@Julia_VERSION_PATCH@"
+
+#define JULIA_EXECUTABLE "@Julia_EXECUTABLE@"
+
+#endif
