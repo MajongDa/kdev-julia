@@ -2,6 +2,7 @@
 #include <QReadWriteLock>
 
 #include <KPluginFactory>
+#include <KLocalizedString>
 
 #include <interfaces/icore.h>
 #include <interfaces/idocument.h>
@@ -14,6 +15,14 @@
 #include <interfaces/iprojectcontroller.h>
 #include <interfaces/iproject.h>
 #include <interfaces/isession.h>
+#include <interfaces/launchconfigurationtype.h>
+#include <interfaces/icore.h>
+#include <interfaces/iplugincontroller.h>
+#include <interfaces/iruncontroller.h>
+#include <interfaces/iuicontroller.h>
+
+#include <executescript/iexecutescriptplugin.h>
+
 #include <language/assistant/renameassistant.h>
 #include <language/assistant/staticassistantsmanager.h>
 #include <language/interfaces/editorcontext.h>
@@ -21,26 +30,23 @@
 #include <language/duchain/duchainlock.h>
 #include <language/codecompletion/codecompletion.h>
 #include <language/codecompletion/codecompletionmodel.h>
+
 #include <KTextEditor/Document>
 #include <KTextEditor/View>
-
-#include "julialanguagesupport.h"
-#include "juliahighlighting.hpp"
-#include "projectconfig/projectconfigpage.h"
-#include "juliaexecutionlauncher.h"
-#include "juliaexecutionjob.h"
-#include "kdevjuliaversion.h"
-#include <executescript/iexecutescriptplugin.h>
-#include <interfaces/launchconfigurationtype.h>
-#include <interfaces/icore.h>
-#include <interfaces/iplugincontroller.h>
-#include <interfaces/iruncontroller.h>
 
 #include <QDebug>
 #include <QProcess>
 #include <QAction>
-#include <KLocalizedString>
-#include <qassert.h>
+#include <QtAssert>
+
+#include "julialanguagesupport.h"
+#include "juliahighlighting.hpp"
+#include "juliaexecutionlauncher.h"
+#include "juliaexecutionjob.h"
+#include "kdevjuliaversion.h"
+#include "projectconfig/projectconfigpage.h"
+#include "graphicstoolviewfactory.h"
+
 #include "juliadebug.h"
 
 using namespace KDevelop;
@@ -90,6 +96,8 @@ LanguageSupport::LanguageSupport(QObject* parent, const KPluginMetaData& metaDat
     type->addLauncher(new JuliaExecutionLauncher());
     qCDebug(KDEV_JULIA) << "Julia execution launcher registered";
 
+ 
+    core()->uiController()->addToolView(QStringLiteral("Graphics Output"), new GraphicsToolViewFactory);
 
     // Connect to document opened signal
     QObject::connect(ICore::self()->documentController(),
@@ -230,6 +238,14 @@ void LanguageSupport::executeCurrentJuliaFile()
         graphicsDir = config.readEntry("graphicsFileDir", QStringLiteral("/tmp/graphics"));
         socketHost = config.readEntry("socketHost", QStringLiteral("localhost"));
         socketPort = config.readEntry("socketPort", 8080);
+
+        core()->uiController()->removeToolView(m_view);
+        m_view = nullptr;
+        m_view = new GraphicsToolViewFactory();
+        m_view->setExecutionContext(graphicsMethod, graphicsDir, socketHost, socketPort);
+        core()->uiController()->addToolView(QStringLiteral("Graphics Output"),m_view);
+
+
     }
 
     // Create execution job with graphics redirection

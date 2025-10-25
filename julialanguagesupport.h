@@ -3,12 +3,15 @@
 
 #include <interfaces/iplugin.h>
 #include <interfaces/ilanguagecheckprovider.h>
+#include <outputview/ioutputview.h>
 #include <language/interfaces/ilanguagesupport.h>
 #include <language/duchain/topducontext.h>
 
 #include <QVariant>
 #include <QProcess>
 #include <memory>
+
+#include "graphicstoolviewfactory.h"
 
 namespace KDevelop
 {
@@ -63,8 +66,8 @@ public Q_SLOTS:
 private:
     static LanguageSupport* m_self;
     Highlighting* m_highlighting = nullptr;
-    
-    // Check if Julia Language Server is installed
+    GraphicsToolViewFactory* m_view = nullptr;
+
     void checkJuliaLanguageServer();
 };
 

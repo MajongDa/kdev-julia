@@ -4,10 +4,9 @@
     SPDX-License-Identifier: GPL-2.0-or-later
 */
 
-#include "juliaexecutionlauncher.h"
-#include <interfaces/idocumentcontroller.h>
 #include <executescript/iexecutescriptplugin.h>
-#include <interfaces/launchconfigurationpage.h>
+#include <interfaces/idocumentcontroller.h>
+
 #include <interfaces/ilaunchconfiguration.h>
 #include <interfaces/iplugincontroller.h>
 #include <interfaces/icore.h>
@@ -17,19 +16,15 @@
 #include <KMessageBox>
 #include <KParts/MainWindow>
 #include <KConfigGroup>
+
 #include <QFileInfo>
 #include <QStandardPaths>
 #include <QProcess>
-
 #include <QDebug>
-#include "juliadebug.h"
-#include <util/environmentprofilelist.h>
 
+#include "juliaexecutionlauncher.h"
 #include "juliaexecutionjob.h"
-#include <interfaces/iruntimecontroller.h>
-#include <interfaces/iruntime.h>
-#include <project/projectmodel.h>
-#include <util/path.h>
+#include "juliadebug.h"
 
 namespace Julia {
 
