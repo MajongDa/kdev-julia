@@ -51,7 +51,7 @@ set(kdevjulialanguagesupport_PART_SRCS
     projectconfig/projectconfigpage.cpp
     juliaexecutionlauncher.cpp
     juliaexecutionjob.cpp
-    graphicsoutputview.cpp
+    graphicsoutputwidget.cpp
     graphicstoolviewfactory.cpp
 )
 

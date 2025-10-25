@@ -31,10 +31,10 @@ elseif GRAPHICS_METHOD == "socket"
         include(joinpath(@__DIR__,"graphics", "SocketPlotDisplay.jl"))
         using .SocketPlotDisplay
 
-        # Start server and activate socket display
-        SocketPlotDisplay.start_server!(SOCKET_PORT)
+        # Connect as client to KDevelop's graphics server
+        SocketPlotDisplay.connect_client!(SOCKET_HOST, SOCKET_PORT)
         SocketPlotDisplay.activate!()
-        println("Graphics redirection activated: TCP socket on port $SOCKET_PORT")
+        println("Graphics redirection activated: TCP client connected to $SOCKET_HOST:$SOCKET_PORT")
     catch err
         @warn "Failed to activate socket-based graphics redirection: $err"
     end

@@ -24,7 +24,6 @@
 #include <executescript/iexecutescriptplugin.h>
 
 #include <language/assistant/renameassistant.h>
-#include <language/assistant/staticassistantsmanager.h>
 #include <language/interfaces/editorcontext.h>
 #include <language/duchain/duchain.h>
 #include <language/duchain/duchainlock.h>
@@ -228,7 +227,7 @@ void LanguageSupport::executeCurrentJuliaFile()
     QString interpreter = QStringLiteral(JULIA_EXECUTABLE); // default
     int graphicsMethod = 0; // file-based by default
     QString graphicsDir = QStringLiteral("/tmp/graphics");
-    QString socketHost = QStringLiteral("localhost");
+    QString socketHost = QStringLiteral("127.0.0.1");
     int socketPort = 8080;
 
     if (auto project = KDevelop::ICore::self()->projectController()->findProjectForUrl(document->url())) {
@@ -236,26 +235,25 @@ void LanguageSupport::executeCurrentJuliaFile()
         interpreter = config.readEntry("interpreter", QStringLiteral(JULIA_EXECUTABLE));
         graphicsMethod = config.readEntry("graphicsMethod", 0);
         graphicsDir = config.readEntry("graphicsFileDir", QStringLiteral("/tmp/graphics"));
-        socketHost = config.readEntry("socketHost", QStringLiteral("localhost"));
+        socketHost = config.readEntry("socketHost", QStringLiteral("127.0.0.1"));
         socketPort = config.readEntry("socketPort", 8080);
-
-        core()->uiController()->removeToolView(m_view);
-        m_view = nullptr;
-        m_view = new GraphicsToolViewFactory();
-        m_view->setExecutionContext(graphicsMethod, graphicsDir, socketHost, socketPort);
-        core()->uiController()->addToolView(QStringLiteral("Graphics Output"),m_view);
-
-
     }
+    // process orphan files with default values anyway
+    core()->uiController()->removeToolView(m_view);
+    m_view = nullptr;
+    m_view = new GraphicsToolViewFactory();
+    m_view->setExecutionContext(graphicsMethod, graphicsDir, socketHost,socketPort);
+    core()->uiController()->addToolView(QStringLiteral("GraphicsOutput"),m_view);
+
 
     // Create execution job with graphics redirection
-    QStringList interpreterList = {interpreter};
-    QString scriptPath = document->url().toLocalFile();
+    QStringList interpreterList{interpreter};
+    QString scriptPath{document->url().toLocalFile()};
     QStringList arguments; // empty for now
     QUrl workingDirectory = QUrl::fromLocalFile(QFileInfo(scriptPath).absolutePath());
     QString environmentProfileName; // empty for default
 
-    auto* job = new JuliaExecutionJob(interpreterList, scriptPath, 
+    auto* job = new JuliaExecutionJob(interpreterList, scriptPath,
         arguments, workingDirectory, environmentProfileName, graphicsMethod, graphicsDir, socketHost,
         socketPort);
 

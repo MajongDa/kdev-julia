@@ -1,6 +1,5 @@
-#include "graphicsoutputview.h"
+#include "graphicsoutputwidget.h"
 
-#include <QPalette>
 #include <QDir>
 #include <QFileInfo>
 #include <QImageReader>
@@ -13,8 +12,6 @@
 #include <QMessageBox>
 #include <QStandardPaths>
 #include <QResizeEvent>
-#include <qcontainerfwd.h>
-#include <qcoreevent.h>
 
 #include "juliadebug.h"
 
@@ -41,18 +38,17 @@ GraphicsWidget::GraphicsWidget(QWidget* parent,
     // The widget will inherit colors from the parent theme
 
     // Initialize file system watcher
-    if(!graphicsMethod){
-        m_watcher = new QFileSystemWatcher(this);
-        m_watcher->addPath(m_graphicsDirectory);
-        connect(m_watcher, &QFileSystemWatcher::directoryChanged,
-                this, &GraphicsWidget::onDirectoryChanged);
-        connect(m_watcher, &QFileSystemWatcher::fileChanged,
-                this, &GraphicsWidget::onFileChanged);
-        // Connect refresh button
-        setGraphicsDirectory(m_graphicsDirectory);
-        connect(m_refreshButton, &QPushButton::clicked,
-                this, &GraphicsWidget::onRefreshClicked);
-    }
+    m_watcher = new QFileSystemWatcher(this);
+    connect(m_watcher, &QFileSystemWatcher::directoryChanged,
+            this, &GraphicsWidget::onDirectoryChanged);
+    connect(m_watcher, &QFileSystemWatcher::fileChanged,
+            this, &GraphicsWidget::onFileChanged);
+    // Connect refresh button because we anyway need temporary storage for
+    // any graphics
+    setGraphicsDirectory(m_graphicsDirectory);
+    connect(m_refreshButton, &QPushButton::clicked,
+            this, &GraphicsWidget::onRefreshClicked);
+
     // Initialize TCP server
     if(graphicsMethod){
         m_tcpServer = new QTcpServer(this);
@@ -106,9 +102,9 @@ void GraphicsWidget::setupUI()
 
 void GraphicsWidget::setGraphicsDirectory(const QString& directory)
 {
-    if (m_graphicsDirectory == directory) {
-        return;
-    }
+    // if (m_graphicsDirectory == directory) {
+    //     return;
+    // }
 
     m_graphicsDirectory = directory;
 
@@ -348,9 +344,9 @@ void GraphicsWidget::startSocketServer(int port)
     }
 
     m_socketPort = port;
-    if (m_tcpServer->listen(QHostAddress::Any, port)) {
+    if (m_tcpServer->listen(QHostAddress::LocalHost, port)) {
         m_socketServerRunning = true;
-        qCDebug(KDEV_JULIA) << "TCP socket server started on port" << port;
+        qCDebug(KDEV_JULIA) << "TCP socket server listening on localhost:" << port << "for Julia clients";
     } else {
         qCWarning(KDEV_JULIA) << "Failed to start TCP socket server on port" << port;
         m_socketServerRunning = false;
@@ -427,40 +423,58 @@ void GraphicsWidget::processSocketData(QTcpSocket* clientSocket)
 {
     QByteArray& buffer = m_clientBuffers[clientSocket];
 
-    // Simple protocol: expect images as raw data with a size header
-    // Format: [4 bytes size][image data]
-    while (buffer.size() >= 4) {
-        QDataStream stream(buffer);
-        stream.setByteOrder(QDataStream::BigEndian);
+    // SocketPlotDisplay.jl protocol: 8-byte big-endian length + payload
+    const int FRAME_HEADER_BYTES = 8;
 
-        quint32 imageSize;
-        stream >> imageSize;
+    while (buffer.size() >= FRAME_HEADER_BYTES) {
+        // Read the 8-byte big-endian length header
+        if (buffer.size() < FRAME_HEADER_BYTES) {
+            break; // Not enough data for header
+        }
 
-        if (buffer.size() < 4 + int(imageSize)) {
-            // Not enough data yet
+        // Extract length from first 8 bytes (big-endian)
+        quint64 payloadSize = 0;
+        for (int i = 0; i < FRAME_HEADER_BYTES; ++i) {
+            payloadSize = (payloadSize << 8) | static_cast<quint8>(buffer[i]);
+        }
+
+        // Check for reasonable payload size (max 50MB like in Julia code)
+        const quint64 MAX_PAYLOAD_SIZE = 50 * 1024 * 1024;
+        if (payloadSize > MAX_PAYLOAD_SIZE) {
+            qCWarning(KDEV_JULIA) << "Socket payload too large:" << payloadSize << "bytes, rejecting";
+            // Clear buffer to prevent further processing of corrupted data
+            buffer.clear();
+            return;
+        }
+
+        if (buffer.size() < FRAME_HEADER_BYTES + static_cast<int>(payloadSize)) {
+            // Not enough data for complete frame
             break;
         }
 
-        // Extract image data
-        QByteArray imageData = buffer.mid(4, imageSize);
-        buffer.remove(0, 4 + imageSize);
+        // Extract payload data
+        QByteArray payloadData = buffer.mid(FRAME_HEADER_BYTES, static_cast<int>(payloadSize));
+        buffer.remove(0, FRAME_HEADER_BYTES + static_cast<int>(payloadSize));
 
         // Try to decode as image
         QImage image;
-        if (image.loadFromData(imageData)) {
+        if (image.loadFromData(payloadData)) {
             // Save image to temporary file
             QString timestamp = QString::number(QDateTime::currentMSecsSinceEpoch());
             QString filename = QStringLiteral("socket_image_%1.png").arg(timestamp);
             QString filePath = QDir(m_graphicsDirectory).absoluteFilePath(filename);
 
             if (image.save(filePath, "PNG")) {
-                qCDebug(KDEV_JULIA) << "Received and saved image from socket:" << filename;
+                qCDebug(KDEV_JULIA) << "Received and saved image from socket:" << filename
+                                   << "(" << payloadData.size() << "bytes)";
                 // The file watcher will automatically detect and display the new image
             } else {
-                qCWarning(KDEV_JULIA) << "Failed to save received image";
+                qCWarning(KDEV_JULIA) << "Failed to save received image to" << filePath;
             }
         } else {
-            qCWarning(KDEV_JULIA) << "Failed to decode image data from socket";
+            qCWarning(KDEV_JULIA) << "Failed to decode image data from socket ("
+                                 << payloadData.size() << "bytes)"
+                                 << "First few bytes:" << payloadData.left(16).toHex(' ');
         }
     }
 }
@@ -542,4 +556,4 @@ void GraphicsWidget::cleanupTemporaryImages()
 
 } // namespace Julia
 
-#include "moc_graphicsoutputview.cpp"
+#include "moc_graphicsoutputwidget.cpp"

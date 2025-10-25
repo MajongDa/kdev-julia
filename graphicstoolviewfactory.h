@@ -2,7 +2,7 @@
 #define GRAPHICSTOOLVIEWFACTORY_H
 
 #include <interfaces/iuicontroller.h>
-#include <interfaces/iproject.h>
+
 
 namespace Julia {
 

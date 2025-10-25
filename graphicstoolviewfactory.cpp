@@ -1,5 +1,5 @@
 #include "graphicstoolviewfactory.h"
-#include "graphicsoutputview.h"
+#include "graphicsoutputwidget.h"
 
 #include <interfaces/icore.h>
 #include <interfaces/iproject.h>
@@ -32,6 +32,8 @@ QWidget* GraphicsToolViewFactory::create(QWidget* parent)
                                                   );
 
     // Configure the view with current settings
+    // equal to default value
+    // TODO make proper default configured file for orphans or socket saved pics
     view->setGraphicsDirectory(m_graphicsDir);
 
     // Configure socket settings if needed
@@ -81,22 +83,6 @@ void GraphicsToolViewFactory::loadProjectConfiguration()
     }
 }
 
-void GraphicsToolViewFactory::setProjectContext(KDevelop::IProject* project)
-{
-    if (project) {
-        KConfigGroup config = project->projectConfiguration()->group(QStringLiteral("Juliasupport"));
-        m_graphicsMethod = config.readEntry("graphicsMethod", 0);
-        m_graphicsDir = config.readEntry("graphicsFileDir", QStringLiteral("/tmp/graphics"));
-        m_socketPort = config.readEntry("socketPort", 8080);
-        m_socketHost = config.readEntry("socketHost", QStringLiteral("localhost"));
-
-        qCDebug(KDEV_JULIA) << "Updated graphics configuration from project context" << project->name() << ":"
-                           << "method=" << m_graphicsMethod
-                           << "dir=" << m_graphicsDir
-                           << "host=" << m_socketHost
-                           << "port=" << m_socketPort;
-    }
-}
 void GraphicsToolViewFactory::setExecutionContext(int graphicsMethod, QString graphicsDir, QString host, int port)
 {
     m_graphicsMethod = graphicsMethod;

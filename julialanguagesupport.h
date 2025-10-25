@@ -9,7 +9,7 @@
 
 #include <QVariant>
 #include <QProcess>
-#include <memory>
+
 
 #include "graphicstoolviewfactory.h"
 

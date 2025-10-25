@@ -9,9 +9,9 @@
 #include <QFileInfo>
 #include <QStandardPaths>
 
-#include <KLocalizedString>
 #include <KProcess>
 #include <KSharedConfig>
+#include <KLocalizedString>
 
 #include <interfaces/iruntimecontroller.h>
 #include <interfaces/iruntime.h>
