@@ -278,10 +278,10 @@ AstNode* AstNode::fromJson(const QJsonObject& json, AstNode* parent)
     if (json.contains(QLatin1String("range"))) {
         QJsonObject rangeObj = json.value(QLatin1String("range")).toObject();
         int startLine = rangeObj.value(QLatin1String("start_line")).toInt()-1;
-        int startColumn = rangeObj.value(QLatin1String("start_column")).toInt();
-        int endLine = rangeObj.value(QLatin1String("end_line")).toInt() - 1;
-        int endColumn = rangeObj.value(QLatin1String("end_column")).toInt();  // -2: 1-based to 0-based, minus 1 for inclusive end
-        
+        int endLine = rangeObj.value(QLatin1String("end_line")).toInt()-1;
+        int startColumn = rangeObj.value(QLatin1String("start_column")).toInt()-1;
+        int endColumn = rangeObj.value(QLatin1String("end_column")).toInt()-1;
+
         range = KDevelop::RangeInRevision(startLine, startColumn, endLine, endColumn);
     }
     

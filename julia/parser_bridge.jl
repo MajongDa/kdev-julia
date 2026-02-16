@@ -47,31 +47,36 @@ function node_to_dict(node)
                 start_line = JuliaSyntax.source_line(source_file, start_byte)
                 end_line = JuliaSyntax.source_line(source_file, end_byte)
                 
-                # Calculate column - safe approach using ncodeunits
+                # Calculate column - find position of last newline before start_byte
                 source_text = JuliaSyntax.sourcetext(source_file)
                 start_col = 1
                 
-                if source_text !== nothing
-                    # Calculate start column by counting from last newline
-                    byte_idx = start_byte
-                    while byte_idx > 1
-                        byte_idx -= 1
-                        # Use prevind to get previous character index
-                        prev_idx = prevind(source_text, byte_idx)
-                        if prev_idx < 1
+                if source_text !== nothing && start_byte > 1
+                    # Find the last newline BEFORE start_byte
+                    line_start = start_byte
+                    for i in (start_byte-1):-1:1
+                        if source_text[i] == '\n'
+                            line_start = i + 1
                             break
                         end
-                        c = source_text[prev_idx]
-                        if c == '\n'
-                            break
-                        end
-                        start_col += 1
                     end
+                    # Column is the offset from the line start (1-indexed)
+                    start_col = start_byte - line_start + 1
                 end
                 
-                # End column = start column + character span
-                # Use byte span as approximation (works for ASCII, close enough for column calc)
-                end_col = start_col + JuliaSyntax.span(node)
+                # Calculate end column the same way (add 1 for exclusive end)
+                end_col = 1
+                if source_text !== nothing && end_byte > 1
+                    line_start = end_byte
+                    for i in (end_byte-1):-1:1
+                        if source_text[i] == '\n'
+                            line_start = i + 1
+                            break
+                        end
+                    end
+                    # Column is offset from line start + 1 for exclusive end
+                    end_col = end_byte - line_start + 2
+                end
                 
                 result["range"] = Dict(
                     "start_line" => start_line,
