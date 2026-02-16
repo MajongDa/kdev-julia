@@ -47,6 +47,7 @@
 #include "graphicstoolviewfactory.h"
 
 #include "juliadebug.h"
+#include "parser/juliaparsejob.h"
 
 using namespace KDevelop;
 
@@ -80,7 +81,7 @@ LanguageSupport::LanguageSupport(QObject* parent, const KPluginMetaData& metaDat
     m_self = this;
 
     // Initialize syntax highlighting
-    //m_highlighting = new Highlighting(this);
+    m_highlighting = new Highlighting(this);
 
     // Check if Julia Language Server is installed
     checkJuliaLanguageServer();
@@ -106,28 +107,9 @@ LanguageSupport::LanguageSupport(QObject* parent, const KPluginMetaData& metaDat
 
 void LanguageSupport::checkJuliaLanguageServer()
 {
-    // Create a process to check if the Julia Language Server package is installed
-    QProcess process;
-    process.setProgram(QStringLiteral("julia"));
-    process.setArguments({
-        QStringLiteral("-e"),
-        QStringLiteral("using Pkg; haskey(Pkg.installed(), \"LanguageServer\") || println(\"Not installed\")")
-    });
-
-    process.start();
-    if (!process.waitForFinished(5000)) {
-        qCWarning(KDEV_JULIA) << "Failed to check for Julia Language Server installation";
-        return;
-    }
-
-    QString output = QString::fromUtf8(process.readAllStandardOutput()).trimmed();
-
-    if (output == QLatin1String("Not installed")) {
-        qCWarning(KDEV_JULIA) << "Julia Language Server not installed. LSP features will be disabled.";
-        qCWarning(KDEV_JULIA) << "To install, run: julia -e \"using Pkg; Pkg.add(\\\"LanguageServer\\\")\" in your terminal";
-    } else {
-        qCDebug(KDEV_JULIA) << "Julia Language Server is installed, LSP features enabled";
-    }
+    // LSP is handled by the separate lspclient plugin
+    // This check is no longer needed
+    qCDebug(KDEV_JULIA) << "LSP features provided by lspclient plugin";
 }
 
 void LanguageSupport::documentOpened(IDocument* doc)
@@ -162,21 +144,20 @@ LanguageSupport::~LanguageSupport()
 
 KDevelop::ParseJob* LanguageSupport::createParseJob(const IndexedString& url)
 {
-    // Use LSP for parsing instead of creating a custom parse job
-    // For now, return nullptr
-    return nullptr;
+    qCDebug(KDEV_JULIA) << "createParseJob called for:" << url.str();
+    return new Julia::JuliaParseJob(url, this);
 }
 //
 QString LanguageSupport::name() const
 {
     return QStringLiteral("Julia");
 }
-//
-// KDevelop::ICodeHighlighting* LanguageSupport::codeHighlighting() const
-// {
-//     return m_highlighting;
-// }
-//
+
+KDevelop::ICodeHighlighting* LanguageSupport::codeHighlighting() const
+{
+    return m_highlighting;
+}
+
 LanguageSupport* LanguageSupport::self()
 {
     return m_self;

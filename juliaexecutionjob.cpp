@@ -1,9 +1,3 @@
-/*
-    SPDX-FileCopyrightText: 2025 Your Name <your.email@example.com>
-
-    SPDX-License-Identifier: GPL-2.0-or-later
-*/
-
 #include "juliaexecutionjob.h"
 
 #include <QFileInfo>

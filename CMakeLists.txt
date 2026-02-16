@@ -53,7 +53,22 @@ set(kdevjulialanguagesupport_PART_SRCS
     juliaexecutionjob.cpp
     graphicsoutputwidget.cpp
     graphicstoolviewfactory.cpp
+    # Parser infrastructure
+    parser/juliabridge.cpp
+    parser/ast.cpp
+    parser/juliaparsejob.cpp
+    # DUChain builders
+    duchain/contextbuilder.cpp
+    duchain/declarationbuilder.cpp
+    duchain/usebuilder.cpp
+    # Type mapping
+    types/types.cpp
+    # Completion
+    completion/juliacompletion.cpp
 )
+
+# Tests
+add_subdirectory(parser/ast/test)
 
 
 ecm_qt_declare_logging_category(kdevjulialanguagesupport_PART_SRCS

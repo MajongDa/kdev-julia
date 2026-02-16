@@ -44,7 +44,7 @@ public:
     KDevelop::ParseJob* createParseJob(const KDevelop::IndexedString& url) override;
     
     /*The code highlighter*/
-    // KDevelop::ICodeHighlighting* codeHighlighting() const override;
+    KDevelop::ICodeHighlighting* codeHighlighting() const override;
 
     KDevelop::ContextMenuExtension contextMenuExtension(KDevelop::Context* context, QWidget* parent) override;
 
