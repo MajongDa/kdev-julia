@@ -7,6 +7,7 @@
 #include <language/duchain/types/functiontype.h>
 #include <language/duchain/types/pointertype.h>
 #include <language/duchain/types/arraytype.h>
+#include <language/duchain/ducontext.h>
 
 #include "../parser/ast.h"
 
@@ -15,7 +16,7 @@ namespace Julia {
 class TypeMapper
 {
 public:
-    static KDevelop::AbstractType* typeFromString(const QString& typeStr);
+    static KDevelop::AbstractType* typeFromString(const QString& typeStr, KDevelop::DUContext* context = nullptr);
     static KDevelop::AbstractType* typeFromAstNode(class AstNode* node);
     static KDevelop::AbstractType* typeFromParametricType(class AstNode* node);
 

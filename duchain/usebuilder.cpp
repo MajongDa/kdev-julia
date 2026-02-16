@@ -50,8 +50,15 @@ void UseBuilder::startVisiting(AstNode* node)
             break;
 
         case NodeKind::Assignment:
+        case NodeKind::Equals:
             if (AstNode* lhs = node->firstChild()) {
-                if (lhs->kind() != NodeKind::Identifier) {
+                if (lhs->kind() == NodeKind::TypeAnnotation) {
+                    for (AstNode* child : lhs->children()) {
+                        startVisiting(child);
+                    }
+                } else if (lhs->kind() == NodeKind::Identifier) {
+                    startVisiting(lhs);
+                } else {
                     for (AstNode* child : lhs->children()) {
                         startVisiting(child);
                     }
@@ -59,6 +66,14 @@ void UseBuilder::startVisiting(AstNode* node)
             }
             if (AstNode* rhs = node->lastChild()) {
                 startVisiting(rhs);
+            }
+            break;
+
+        case NodeKind::TypeAnnotation:
+            for (AstNode* child : node->children()) {
+                if (child) {
+                    startVisiting(child);
+                }
             }
             break;
 
@@ -82,12 +97,8 @@ void UseBuilder::visitIdentifier(AstNode* node)
             parent->kind() == NodeKind::Module ||
             parent->kind() == NodeKind::Macro ||
             parent->kind() == NodeKind::Abstract ||
-            parent->kind() == NodeKind::Primitive ||
-            parent->kind() == NodeKind::Assignment) {
-            
-            if (parent->firstChild() == node) {
-                return;
-            }
+            parent->kind() == NodeKind::Primitive) {
+            return;
         }
     }
 
@@ -98,18 +109,33 @@ void UseBuilder::visitIdentifier(AstNode* node)
     
     qCDebug(KDEV_JULIA) << "  editorFindRange returned:" << range;
     
+    // Skip if parent is a declaration: Equals/Assignment with this as first child, or TypeAnnotation (variable name in type annotation)
+    if (AstNode* parent = node->parent()) {
+        if ((parent->kind() == NodeKind::Equals || parent->kind() == NodeKind::Assignment) && 
+            parent->firstChild() == node) {
+            qCDebug(KDEV_JULIA) << "  Skipping - declaration position (Equals/Assignment)";
+            return;
+        }
+        if (parent->kind() == NodeKind::TypeAnnotation && parent->firstChild() == node) {
+            qCDebug(KDEV_JULIA) << "  Skipping - variable in type annotation";
+            return;
+        }
+    }
+    
     {
         KDevelop::DUChainReadLocker lock(KDevelop::DUChain::lock());
+        
+        // Search in current context
         auto* ctx = currentContext();
+        
         if (ctx) {
             auto decls = ctx->findDeclarations(id, range.start);
-            qCDebug(KDEV_JULIA) << "  Context:" << ctx << "range:" << ctx->range() 
-                << "findDeclarations for" << id << "at" << range.start << "found:" << decls.size();
+            qCDebug(KDEV_JULIA) << "  Context:" << ctx << "findDeclarations for" << id << "at" << range.start << "found:" << decls.size();
             for (auto* d : decls) {
                 qCDebug(KDEV_JULIA) << "    Declaration:" << d->identifier().toString() << "range:" << d->range();
             }
         } else {
-            qCDebug(KDEV_JULIA) << "  No current context!";
+            qCDebug(KDEV_JULIA) << "  No context!";
         }
     }
     

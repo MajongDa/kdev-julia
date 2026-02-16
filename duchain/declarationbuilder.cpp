@@ -1,20 +1,86 @@
 #include "declarationbuilder.h"
 
 #include <QDebug>
+#include <QProcess>
 
 #include <language/duchain/duchain.h>
 #include <language/duchain/declaration.h>
 #include <language/duchain/functiondeclaration.h>
 #include <language/duchain/topducontext.h>
+#include <language/duchain/problem.h>
 #include <language/duchain/types/functiontype.h>
 #include <language/duchain/types/structuretype.h>
 #include <language/duchain/types/integraltype.h>
+#include <language/editor/documentrange.h>
+#include <interfaces/iproblem.h>
 
 #include "../parser/ast.h"
 #include "../types/types.h"
 #include "juliadebug.h"
+#include "kdevjuliaversion.h"
 
 namespace Julia {
+
+namespace {
+
+void reportProblem(KDevelop::TopDUContext* topContext, const KDevelop::RangeInRevision& range, 
+                   const QString& message, KDevelop::IProblem::Severity severity = KDevelop::IProblem::Warning)
+{
+    if (!topContext) return;
+    
+    KDevelop::Problem* p = new KDevelop::Problem();
+    p->setFinalLocation(KDevelop::DocumentRange(topContext->url(), range.castToSimpleRange()));
+    p->setSource(KDevelop::IProblem::SemanticAnalysis);
+    p->setSeverity(severity);
+    p->setDescription(message);
+    
+    KDevelop::DUChainWriteLocker lock(KDevelop::DUChain::lock());
+    topContext->addProblem(KDevelop::ProblemPointer(p));
+}
+
+QString getJuliaExecutable()
+{
+    static QString juliaPath = QStringLiteral(JULIA_EXECUTABLE);
+    return juliaPath;
+}
+
+QString findJuliaModule(const QString& moduleName)
+{
+    QString julia = getJuliaExecutable();
+    if (julia.isEmpty()) {
+        qCDebug(KDEV_JULIA) << "Julia executable not found";
+        return QString();
+    }
+    
+    QString script = QStringLiteral("try pkg = Base.find_package(%1); pkg === nothing ? println(\"NOT_FOUND\") : println(pkg); catch; println(\"NOT_FOUND\"); end")
+                        .arg(QStringLiteral("\"%1\"").arg(moduleName));
+    
+    QProcess process;
+    process.start(julia, {QStringLiteral("-e"), script});
+    process.waitForFinished(3000);
+    
+    QString result = QString::fromUtf8(process.readAllStandardOutput()).trimmed();
+    
+    if (result.isEmpty() || result == QLatin1String("NOT_FOUND")) {
+        return QString();
+    }
+    
+    return result;
+}
+
+bool isBuiltInModule(const QString& name)
+{
+    static const QStringList builtIn = {
+        QStringLiteral("Base"),
+        QStringLiteral("Core"),
+        QStringLiteral("Main"),
+        QStringLiteral("Main.Include"),
+        QStringLiteral("Base.Include")
+    };
+    return builtIn.contains(name);
+}
+
+}
 
 DeclarationBuilder::DeclarationBuilder() = default;
 
@@ -68,6 +134,7 @@ void DeclarationBuilder::startVisiting(AstNode* node)
                     if (decl) {
                         decl->setKind(KDevelop::Declaration::Type);
                         auto* structType = new KDevelop::StructureType();
+                        structType->setDeclaration(decl);
                         decl->setType(KDevelop::AbstractType::Ptr(structType));
                         qCDebug(KDEV_JULIA) << "Struct declaration created:" << name;
                         closeDeclaration();
@@ -89,6 +156,7 @@ void DeclarationBuilder::startVisiting(AstNode* node)
                     if (decl) {
                         decl->setKind(KDevelop::Declaration::Type);
                         auto* structType = new KDevelop::StructureType();
+                        structType->setDeclaration(decl);
                         decl->setType(KDevelop::AbstractType::Ptr(structType));
                         qCDebug(KDEV_JULIA) << "Module declaration created:" << name;
                         closeDeclaration();
@@ -99,34 +167,42 @@ void DeclarationBuilder::startVisiting(AstNode* node)
             DeclarationBuilderBase::startVisiting(node);
             break;
         }
-        case NodeKind::Assignment: {
+        case NodeKind::Equals: {
             AstNode* lhs = node->firstChild();
+            
+            if (!lhs) {
+                DeclarationBuilderBase::startVisiting(node);
+                break;
+            }
             
             QString varName;
             QString typeName;
+            AstNode* varNode = nullptr;
             
-            if (lhs && lhs->kind() == NodeKind::Identifier) {
+            if (lhs->kind() == NodeKind::Identifier) {
                 varName = lhs->text();
-            } else if (lhs && lhs->kind() == NodeKind::TypeAnnotation) {
+                varNode = lhs;
+            } else if (lhs->kind() == NodeKind::TypeAnnotation) {
                 AstNode* nameNode = lhs->firstChild();
                 AstNode* typeNode = lhs->lastChild();
                 if (nameNode && nameNode->kind() == NodeKind::Identifier) {
                     varName = nameNode->text();
+                    varNode = nameNode;
                 }
                 if (typeNode) {
                     typeName = typeNode->text();
                 }
             }
             
-            if (!varName.isEmpty()) {
-                auto* decl = openDeclaration<KDevelop::Declaration>(lhs, lhs);
+            if (!varName.isEmpty() && varNode) {
+                auto* decl = openDeclaration<KDevelop::Declaration>(varNode, varNode);
                 if (decl) {
                     decl->setKind(KDevelop::Declaration::Instance);
                     
                     KDevelop::AbstractType::Ptr typePtr;
                     
                     if (!typeName.isEmpty()) {
-                        typePtr = KDevelop::AbstractType::Ptr(TypeMapper::typeFromString(typeName));
+                        typePtr = KDevelop::AbstractType::Ptr(TypeMapper::typeFromString(typeName, currentContext()));
                     }
                     
                     if (!typePtr) {
@@ -135,7 +211,7 @@ void DeclarationBuilder::startVisiting(AstNode* node)
                     }
                     
                     decl->setType(typePtr);
-                    qCDebug(KDEV_JULIA) << "Variable declaration created:" << varName << "type:" << typeName;
+                    qCDebug(KDEV_JULIA) << "Variable declaration created:" << varName << "type:" << typeName << "range:" << decl->range();
                     closeDeclaration();
                 }
             }
@@ -152,6 +228,17 @@ void DeclarationBuilder::startVisiting(AstNode* node)
                 if (child->kind() == NodeKind::Identifier) {
                     QString moduleName = child->text().trimmed();
                     if (!moduleName.isEmpty()) {
+                        if (!isBuiltInModule(moduleName)) {
+                            QString modulePath = findJuliaModule(moduleName);
+                            if (modulePath.isEmpty()) {
+                                reportProblem(topContext(), child->range(), 
+                                    QStringLiteral("Module \"%1\" not found").arg(moduleName),
+                                    KDevelop::IProblem::Warning);
+                            } else {
+                                qCDebug(KDEV_JULIA) << "Found Julia module:" << moduleName << "at" << modulePath;
+                            }
+                        }
+                        
                         auto* decl = openDeclaration<KDevelop::Declaration>(child, node);
                         if (decl) {
                             decl->setKind(KDevelop::Declaration::Namespace);
@@ -164,6 +251,18 @@ void DeclarationBuilder::startVisiting(AstNode* node)
                 } else if (child->kind() == NodeKind::Dot) {
                     QString modulePath = child->text().trimmed();
                     if (!modulePath.isEmpty()) {
+                        QStringList parts = modulePath.split(QLatin1Char('.'));
+                        if (!parts.isEmpty() && !isBuiltInModule(parts.first())) {
+                            QString modulePathResolved = findJuliaModule(parts.first());
+                            if (modulePathResolved.isEmpty()) {
+                                reportProblem(topContext(), child->range(), 
+                                    QStringLiteral("Module \"%1\" not found").arg(parts.first()),
+                                    KDevelop::IProblem::Warning);
+                            } else {
+                                qCDebug(KDEV_JULIA) << "Found Julia module:" << parts.first() << "at" << modulePathResolved;
+                            }
+                        }
+                        
                         auto* decl = openDeclaration<KDevelop::Declaration>(child, node);
                         if (decl) {
                             decl->setKind(KDevelop::Declaration::Namespace);
@@ -178,6 +277,17 @@ void DeclarationBuilder::startVisiting(AstNode* node)
                         if (subchild && subchild->kind() == NodeKind::Identifier) {
                             QString moduleName = subchild->text().trimmed();
                             if (!moduleName.isEmpty()) {
+                                if (!isBuiltInModule(moduleName)) {
+                                    QString modulePath = findJuliaModule(moduleName);
+                                    if (modulePath.isEmpty()) {
+                                        reportProblem(topContext(), subchild->range(), 
+                                            QStringLiteral("Module \"%1\" not found").arg(moduleName),
+                                            KDevelop::IProblem::Warning);
+                                    } else {
+                                        qCDebug(KDEV_JULIA) << "Found Julia module:" << moduleName << "at" << modulePath;
+                                    }
+                                }
+                                
                                 auto* decl = openDeclaration<KDevelop::Declaration>(subchild, node);
                                 if (decl) {
                                     decl->setKind(KDevelop::Declaration::Namespace);
@@ -204,6 +314,17 @@ void DeclarationBuilder::startVisiting(AstNode* node)
                 if (child->kind() == NodeKind::Identifier) {
                     QString name = child->text().trimmed();
                     if (!name.isEmpty()) {
+                        if (!isBuiltInModule(name)) {
+                            QString modulePath = findJuliaModule(name);
+                            if (modulePath.isEmpty()) {
+                                reportProblem(topContext(), child->range(), 
+                                    QStringLiteral("Module \"%1\" not found").arg(name),
+                                    KDevelop::IProblem::Warning);
+                            } else {
+                                qCDebug(KDEV_JULIA) << "Found Julia module:" << name << "at" << modulePath;
+                            }
+                        }
+                        
                         auto* decl = openDeclaration<KDevelop::Declaration>(child, node);
                         if (decl) {
                             decl->setKind(KDevelop::Declaration::Instance);
@@ -216,12 +337,39 @@ void DeclarationBuilder::startVisiting(AstNode* node)
                 } else if (child->kind() == NodeKind::Dot) {
                     QString path = child->text().trimmed();
                     if (!path.isEmpty()) {
+                        QStringList parts = path.split(QLatin1Char('.'));
+                        if (!parts.isEmpty() && !isBuiltInModule(parts.first())) {
+                            QString modulePathResolved = findJuliaModule(parts.first());
+                            if (modulePathResolved.isEmpty()) {
+                                reportProblem(topContext(), child->range(), 
+                                    QStringLiteral("Module \"%1\" not found").arg(parts.first()),
+                                    KDevelop::IProblem::Warning);
+                            } else {
+                                qCDebug(KDEV_JULIA) << "Found Julia module:" << parts.first() << "at" << modulePathResolved;
+                            }
+                        }
+                        
                         auto* decl = openDeclaration<KDevelop::Declaration>(child, node);
                         if (decl) {
                             decl->setKind(KDevelop::Declaration::Namespace);
                             auto* structType = new KDevelop::StructureType();
                             decl->setType(KDevelop::AbstractType::Ptr(structType));
                             qCDebug(KDEV_JULIA) << "Import path declaration created:" << path;
+                            closeDeclaration();
+                        }
+                    }
+                } else if (child->kind() == NodeKind::Colon) {
+                    for (AstNode* importPath : child->children()) {
+                        if (!importPath) continue;
+                        QString pathText = importPath->text().trimmed();
+                        if (pathText.isEmpty()) continue;
+                        
+                        auto* decl = openDeclaration<KDevelop::Declaration>(importPath, node);
+                        if (decl) {
+                            decl->setKind(KDevelop::Declaration::Instance);
+                            auto* structType = new KDevelop::StructureType();
+                            decl->setType(KDevelop::AbstractType::Ptr(structType));
+                            qCDebug(KDEV_JULIA) << "Import from declaration created:" << pathText;
                             closeDeclaration();
                         }
                     }
