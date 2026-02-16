@@ -33,3 +33,10 @@ Then start KDevelop from that console:
     kdevelop
 
 If everything went well, you should see "Hello world, my plugin is loaded!" printed in the console and find the plugin also listed in the dialog opened by the menu entry "Help" > "Loaded Plugins".
+
+For automatation purposes you may intrested in more complex commmand spans. F
+For example for test run you may use 
+pkill -9 kdevelop 2>/dev/null; sleep 1
+export QT_PLUGIN_PATH=${HOME}/.local/lib/plugins/
+export QT_LOGGING_RULES='kdevelop.plugins.julia.debug=true'
+script -c "timeout 25 kdevelop ${HOME}projects/juliaGraphics/interactivePlot.jl 2>&1 | grep -E 'julia|SEGV|ABRT|ASSERT'" /tmp/kdev.log 2>&1

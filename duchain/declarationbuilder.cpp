@@ -143,6 +143,116 @@ void DeclarationBuilder::startVisiting(AstNode* node)
             DeclarationBuilderBase::startVisiting(node);
             break;
         }
+        case NodeKind::Using: {
+            qCDebug(KDEV_JULIA) << "Visiting using statement";
+            
+            for (AstNode* child : node->children()) {
+                if (!child) continue;
+                
+                if (child->kind() == NodeKind::Identifier) {
+                    QString moduleName = child->text().trimmed();
+                    if (!moduleName.isEmpty()) {
+                        auto* decl = openDeclaration<KDevelop::Declaration>(child, node);
+                        if (decl) {
+                            decl->setKind(KDevelop::Declaration::Namespace);
+                            auto* structType = new KDevelop::StructureType();
+                            decl->setType(KDevelop::AbstractType::Ptr(structType));
+                            qCDebug(KDEV_JULIA) << "Using declaration created:" << moduleName;
+                            closeDeclaration();
+                        }
+                    }
+                } else if (child->kind() == NodeKind::Dot) {
+                    QString modulePath = child->text().trimmed();
+                    if (!modulePath.isEmpty()) {
+                        auto* decl = openDeclaration<KDevelop::Declaration>(child, node);
+                        if (decl) {
+                            decl->setKind(KDevelop::Declaration::Namespace);
+                            auto* structType = new KDevelop::StructureType();
+                            decl->setType(KDevelop::AbstractType::Ptr(structType));
+                            qCDebug(KDEV_JULIA) << "Using path declaration created:" << modulePath;
+                            closeDeclaration();
+                        }
+                    }
+                } else {
+                    for (AstNode* subchild : child->children()) {
+                        if (subchild && subchild->kind() == NodeKind::Identifier) {
+                            QString moduleName = subchild->text().trimmed();
+                            if (!moduleName.isEmpty()) {
+                                auto* decl = openDeclaration<KDevelop::Declaration>(subchild, node);
+                                if (decl) {
+                                    decl->setKind(KDevelop::Declaration::Namespace);
+                                    auto* structType = new KDevelop::StructureType();
+                                    decl->setType(KDevelop::AbstractType::Ptr(structType));
+                                    qCDebug(KDEV_JULIA) << "Using (nested) declaration created:" << moduleName;
+                                    closeDeclaration();
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            
+            DeclarationBuilderBase::startVisiting(node);
+            break;
+        }
+        case NodeKind::Import: {
+            qCDebug(KDEV_JULIA) << "Visiting import statement";
+            
+            for (AstNode* child : node->children()) {
+                if (!child) continue;
+                
+                if (child->kind() == NodeKind::Identifier) {
+                    QString name = child->text().trimmed();
+                    if (!name.isEmpty()) {
+                        auto* decl = openDeclaration<KDevelop::Declaration>(child, node);
+                        if (decl) {
+                            decl->setKind(KDevelop::Declaration::Instance);
+                            auto* structType = new KDevelop::StructureType();
+                            decl->setType(KDevelop::AbstractType::Ptr(structType));
+                            qCDebug(KDEV_JULIA) << "Import declaration created:" << name;
+                            closeDeclaration();
+                        }
+                    }
+                } else if (child->kind() == NodeKind::Dot) {
+                    QString path = child->text().trimmed();
+                    if (!path.isEmpty()) {
+                        auto* decl = openDeclaration<KDevelop::Declaration>(child, node);
+                        if (decl) {
+                            decl->setKind(KDevelop::Declaration::Namespace);
+                            auto* structType = new KDevelop::StructureType();
+                            decl->setType(KDevelop::AbstractType::Ptr(structType));
+                            qCDebug(KDEV_JULIA) << "Import path declaration created:" << path;
+                            closeDeclaration();
+                        }
+                    }
+                }
+            }
+            
+            DeclarationBuilderBase::startVisiting(node);
+            break;
+        }
+        case NodeKind::Export: {
+            qCDebug(KDEV_JULIA) << "Visiting export statement";
+            
+            for (AstNode* child : node->children()) {
+                if (!child || child->kind() != NodeKind::Identifier) continue;
+                
+                QString name = child->text().trimmed();
+                if (!name.isEmpty()) {
+                    auto* decl = openDeclaration<KDevelop::Declaration>(child, node);
+                    if (decl) {
+                        decl->setKind(KDevelop::Declaration::Type);
+                        auto* structType = new KDevelop::StructureType();
+                        decl->setType(KDevelop::AbstractType::Ptr(structType));
+                        qCDebug(KDEV_JULIA) << "Export declaration created:" << name;
+                        closeDeclaration();
+                    }
+                }
+            }
+            
+            DeclarationBuilderBase::startVisiting(node);
+            break;
+        }
         default:
             DeclarationBuilderBase::startVisiting(node);
             break;

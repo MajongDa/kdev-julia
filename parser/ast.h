@@ -49,6 +49,10 @@ enum class NodeKind {
     
     TypeAnnotation,
     
+    Using,
+    Import,
+    Export,
+    
     Equals,
     ColonEquals,
     Dot,

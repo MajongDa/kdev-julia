@@ -32,6 +32,9 @@ NodeKind stringToNodeKind(const QString& kindStr)
         {QStringLiteral("Integer"), NodeKind::Integer},
         {QStringLiteral("Bool"), NodeKind::Bool},
         {QStringLiteral("::"), NodeKind::TypeAnnotation},
+        {QStringLiteral("using"), NodeKind::Using},
+        {QStringLiteral("import"), NodeKind::Import},
+        {QStringLiteral("export"), NodeKind::Export},
         {QStringLiteral("="), NodeKind::Equals},
         {QStringLiteral(":="), NodeKind::ColonEquals},
         {QStringLiteral("."), NodeKind::Dot},
@@ -71,6 +74,9 @@ QString nodeKindToString(NodeKind kind)
         case NodeKind::Integer: return QStringLiteral("Integer");
         case NodeKind::Bool: return QStringLiteral("Bool");
         case NodeKind::TypeAnnotation: return QStringLiteral("::");
+        case NodeKind::Using: return QStringLiteral("using");
+        case NodeKind::Import: return QStringLiteral("import");
+        case NodeKind::Export: return QStringLiteral("export");
         case NodeKind::Equals: return QStringLiteral("=");
         case NodeKind::ColonEquals: return QStringLiteral(":=");
         case NodeKind::Dot: return QStringLiteral(".");
