@@ -54,7 +54,12 @@ bool CodeHighlightingInstance::useRainbowColor(Declaration* dec) const
     }
     
     checkHasBlocks(dec->topContext());
+    
     if (!has_blocks && !dec->internalContext() && ctx == dec->topContext()) {
+        return true;
+    }
+    
+    if (dec->kind() == KDevelop::Declaration::Instance) {
         return true;
     }
     
@@ -77,23 +82,7 @@ CodeHighlightingType CodeHighlightingInstance::typeForDeclaration(Declaration* d
     }
     
     if (dec->kind() == Declaration::Instance) {
-        if (dec->type<ArrayType>()) {
-            return CodeHighlightingType::LocalVariable;
-        }
-        
-        IntegralType::Ptr intType = dec->type<IntegralType>();
-        if (intType) {
-            switch (intType->dataType()) {
-                case IntegralType::TypeInt:
-                case IntegralType::TypeLong:
-                    return CodeHighlightingType::LocalVariable;
-                case IntegralType::TypeDouble:
-                case IntegralType::TypeFloat:
-                    return CodeHighlightingType::LocalVariable;
-                default:
-                    break;
-            }
-        }
+        return CodeHighlightingType::LocalVariable;
     }
     
     return KDevelop::CodeHighlightingInstance::typeForDeclaration(dec, context);
