@@ -37,6 +37,7 @@ enum class NodeKind {
     Continue,
     
     Call,
+    Curly,
     Identifier,
     String,
     Float,
@@ -157,6 +158,19 @@ public:
     int argumentCount() const;
     bool isFunctionCall() const;
     bool isMacroCall() const;
+    
+    QString dump(int indent = 0) const override;
+};
+
+class CurlyNode : public AstNode
+{
+public:
+    CurlyNode(const QString& functionName, const KDevelop::RangeInRevision& range);
+    
+    QString functionName() const;
+    QList<AstNode*> arguments() const;
+    
+    int argumentCount() const;
     
     QString dump(int indent = 0) const override;
 };

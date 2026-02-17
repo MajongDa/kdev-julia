@@ -33,6 +33,8 @@ TypeMapper::JuliaType TypeMapper::stringToJuliaType(const QString& typeStr)
         {QStringLiteral("Missing"), JuliaType::Missing},
         {QStringLiteral("Any"), JuliaType::Any},
         {QStringLiteral("Array"), JuliaType::Array},
+        {QStringLiteral("Vector"), JuliaType::Array},
+        {QStringLiteral("Matrix"), JuliaType::Array},
         {QStringLiteral("Dict"), JuliaType::Dict},
         {QStringLiteral("Tuple"), JuliaType::Tuple},
         {QStringLiteral("Set"), JuliaType::Set},
@@ -96,11 +98,13 @@ uint TypeMapper::integralTypeKind(JuliaType type)
             return KDevelop::IntegralType::TypeInt;
         case JuliaType::Float16:
         case JuliaType::Float32:
+            return KDevelop::IntegralType::TypeFloat;
         case JuliaType::Float64:
             return KDevelop::IntegralType::TypeDouble;
         case JuliaType::Bool:
             return KDevelop::IntegralType::TypeBoolean;
         case JuliaType::Char:
+            return KDevelop::IntegralType::TypeChar;
         case JuliaType::String:
             return KDevelop::IntegralType::TypeString;
         case JuliaType::Nothing:
@@ -111,43 +115,145 @@ uint TypeMapper::integralTypeKind(JuliaType type)
     }
 }
 
-KDevelop::AbstractType* TypeMapper::typeFromString(const QString& typeStr, KDevelop::DUContext* context)
+QStringList TypeMapper::parseTypeParams(const QString& typeStr)
 {
-    JuliaType juliaType = stringToJuliaType(typeStr);
-    
-    KDevelop::AbstractType* type = nullptr;
-
-    if (juliaType == JuliaType::Unknown) {
-        auto* structType = new KDevelop::StructureType();
-        type = structType;
-    } else if (juliaType == JuliaType::Struct || juliaType == JuliaType::Module) {
-        auto* structType = new KDevelop::StructureType();
-        type = structType;
-    } else if (juliaType == JuliaType::Function) {
-        auto* func = new KDevelop::FunctionType();
-        type = func;
-    } else if (juliaType == JuliaType::Dict || juliaType == JuliaType::Tuple || juliaType == JuliaType::Set) {
-        auto* structType = new KDevelop::StructureType();
-        type = structType;
-    } else {
-        auto* integral = new KDevelop::IntegralType(integralTypeKind(juliaType));
-        type = integral;
+    QStringList result;
+    int braceStart = typeStr.indexOf(QLatin1Char('{'));
+    if (braceStart < 0) {
+        return result;
     }
     
-    if (type && context) {
-        KDevelop::QualifiedIdentifier id(typeStr);
-        auto decls = context->findDeclarations(id, KDevelop::CursorInRevision::invalid());
-        
-        if (!decls.isEmpty()) {
-            KDevelop::Declaration* decl = decls.first();
-            if (auto* structType = dynamic_cast<KDevelop::StructureType*>(type)) {
-                structType->setDeclaration(decl);
-                qCDebug(KDEV_JULIA) << "Linked type" << typeStr << "to declaration:" << decl->identifier().toString();
+    int braceCount = 0;
+    int start = braceStart + 1;
+    QString current;
+    
+    for (int i = start; i < typeStr.length(); ++i) {
+        QChar c = typeStr[i];
+        if (c == QLatin1Char('{')) {
+            braceCount++;
+            current += c;
+        } else if (c == QLatin1Char('}')) {
+            if (braceCount > 0) {
+                braceCount--;
+                current += c;
+            } else {
+                if (!current.isEmpty()) {
+                    result.append(current.trimmed());
+                }
+                break;
             }
+        } else if (c == QLatin1Char(',') && braceCount == 0) {
+            if (!current.isEmpty()) {
+                result.append(current.trimmed());
+            }
+            current.clear();
+        } else {
+            current += c;
         }
     }
     
-    return type;
+    return result;
+}
+
+KDevelop::AbstractType* TypeMapper::typeFromString(const QString& typeStr, KDevelop::DUContext* context)
+{
+    QString baseType;
+    QStringList params;
+    
+    if (typeStr.contains(QLatin1Char('{'))) {
+        int bracePos = typeStr.indexOf(QLatin1Char('{'));
+        baseType = typeStr.left(bracePos);
+        params = parseTypeParams(typeStr);
+    } else {
+        baseType = typeStr;
+    }
+    
+    JuliaType baseTypeEnum = stringToJuliaType(baseType);
+    
+    switch (baseTypeEnum) {
+        case JuliaType::Array: {
+            auto* array = new KDevelop::ArrayType();
+            if (!params.isEmpty()) {
+                KDevelop::AbstractType* elementType = typeFromString(params[0], context);
+                if (elementType) {
+                    array->setElementType(KDevelop::AbstractType::Ptr(elementType));
+                }
+            }
+            return array;
+        }
+        
+        case JuliaType::Dict: {
+            auto* map = new KDevelop::MapType();
+            if (params.size() >= 2) {
+                KDevelop::AbstractType* keyType = typeFromString(params[0], context);
+                KDevelop::AbstractType* valType = typeFromString(params[1], context);
+                if (keyType) {
+                    map->replaceKeyType(KDevelop::AbstractType::Ptr(keyType));
+                }
+                if (valType) {
+                    map->replaceContentType(KDevelop::AbstractType::Ptr(valType));
+                }
+            }
+            return map;
+        }
+        
+        case JuliaType::Tuple: {
+            auto* structType = new KDevelop::StructureType();
+            return structType;
+        }
+        
+        case JuliaType::Union: {
+            auto* unsure = new KDevelop::UnsureType();
+            if (!params.isEmpty()) {
+                for (const QString& param : params) {
+                    KDevelop::AbstractType* memberType = typeFromString(param, context);
+                    if (memberType) {
+                        unsure->addType(memberType->indexed());
+                    }
+                }
+            }
+            return unsure;
+        }
+        
+        case JuliaType::Set: {
+            auto* structType = new KDevelop::StructureType();
+            return structType;
+        }
+        
+        case JuliaType::Function: {
+            auto* func = new KDevelop::FunctionType();
+            return func;
+        }
+        
+        case JuliaType::Struct:
+        case JuliaType::Module: {
+            auto* structType = new KDevelop::StructureType();
+            return structType;
+        }
+        
+        default: {
+            KDevelop::AbstractType* type = nullptr;
+            
+            if (baseTypeEnum != JuliaType::Unknown && baseTypeEnum != JuliaType::Any) {
+                type = new KDevelop::IntegralType(integralTypeKind(baseTypeEnum));
+            } else {
+                auto* structType = new KDevelop::StructureType();
+                type = structType;
+                
+                if (context) {
+                    KDevelop::QualifiedIdentifier id(baseType);
+                    auto decls = context->findDeclarations(id, KDevelop::CursorInRevision::invalid());
+                    
+                    if (!decls.isEmpty()) {
+                        KDevelop::Declaration* decl = decls.first();
+                        structType->setDeclaration(decl);
+                    }
+                }
+            }
+            
+            return type;
+        }
+    }
 }
 
 KDevelop::AbstractType* TypeMapper::typeFromAstNode(AstNode* node)
@@ -156,19 +262,14 @@ KDevelop::AbstractType* TypeMapper::typeFromAstNode(AstNode* node)
         return nullptr;
     }
 
+    if (node->kind() == NodeKind::Curly) {
+        return typeFromParametricType(node);
+    }
+
     if (node->kind() == NodeKind::Call) {
         QString typeName = node->text();
         if (typeName.contains(QLatin1Char('{'))) {
             return typeFromParametricType(node);
-        }
-        
-        if (typeName.startsWith(QLatin1String("Union{"))) {
-            auto* callNode = dynamic_cast<CallNode*>(node);
-            if (callNode) {
-                auto* structType = new KDevelop::StructureType();
-                qCDebug(KDEV_JULIA) << "Processing Union type with" << callNode->argumentCount() << "arguments";
-                return structType;
-            }
         }
     }
 
@@ -231,17 +332,21 @@ KDevelop::AbstractType* TypeMapper::typeFromParametricType(AstNode* node)
     }
     
     if (typeName == QLatin1String("Dict")) {
-        auto* structType = new KDevelop::StructureType();
+        auto* map = new KDevelop::MapType();
         
         if (typeParams.size() >= 2) {
             KDevelop::AbstractType* keyType = typeFromAstNode(typeParams.at(0));
             KDevelop::AbstractType* valType = typeFromAstNode(typeParams.at(1));
-            if (keyType && valType) {
-                qCDebug(KDEV_JULIA) << "Dict key type:" << keyType->toString() << "value type:" << valType->toString();
+            if (keyType) {
+                map->replaceKeyType(KDevelop::AbstractType::Ptr(keyType));
             }
+            if (valType) {
+                map->replaceContentType(KDevelop::AbstractType::Ptr(valType));
+            }
+            qCDebug(KDEV_JULIA) << "Dict key type:" << keyType->toString() << "value type:" << valType->toString();
         }
         
-        return structType;
+        return map;
     }
     
     if (typeName == QLatin1String("Tuple")) {
@@ -252,6 +357,20 @@ KDevelop::AbstractType* TypeMapper::typeFromParametricType(AstNode* node)
         }
         
         return structType;
+    }
+    
+    if (typeName == QLatin1String("Union")) {
+        auto* unsure = new KDevelop::UnsureType();
+        
+        for (AstNode* param : typeParams) {
+            KDevelop::AbstractType* memberType = typeFromAstNode(param);
+            if (memberType) {
+                unsure->addType(memberType->indexed());
+            }
+        }
+        
+        qCDebug(KDEV_JULIA) << "Union has" << unsure->typesSize() << "members";
+        return unsure;
     }
     
     if (typeName == QLatin1String("Set")) {

@@ -7,6 +7,8 @@
 #include <language/duchain/types/functiontype.h>
 #include <language/duchain/types/pointertype.h>
 #include <language/duchain/types/arraytype.h>
+#include <language/duchain/types/containertypes.h>
+#include <language/duchain/types/unsuretype.h>
 #include <language/duchain/ducontext.h>
 
 #include "../parser/ast.h"
@@ -58,6 +60,7 @@ public:
 
 private:
     static uint integralTypeKind(JuliaType type);
+    static QStringList parseTypeParams(const QString& typeStr);
 };
 
 }

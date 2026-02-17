@@ -104,6 +104,14 @@ void ContextBuilder::visitStruct(AstNode* node)
     
     AstNode* nameNode = node->firstChild();
     
+    // Handle parametric struct: struct Foo{T} ...
+    // First child is Curly node, not Identifier
+    if (nameNode && nameNode->kind() == NodeKind::Curly) {
+        if (CurlyNode* curly = dynamic_cast<CurlyNode*>(nameNode)) {
+            nameNode = curly->firstChild();
+        }
+    }
+    
     KDevelop::QualifiedIdentifier structId;
     if (nameNode && nameNode->kind() == NodeKind::Identifier) {
         structId = KDevelop::QualifiedIdentifier(nameNode->text());

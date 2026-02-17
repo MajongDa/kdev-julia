@@ -26,6 +26,7 @@ NodeKind stringToNodeKind(const QString& kindStr)
         {QStringLiteral("break"), NodeKind::Break},
         {QStringLiteral("continue"), NodeKind::Continue},
         {QStringLiteral("call"), NodeKind::Call},
+        {QStringLiteral("curly"), NodeKind::Curly},
         {QStringLiteral("Identifier"), NodeKind::Identifier},
         {QStringLiteral("string"), NodeKind::String},
         {QStringLiteral("Float"), NodeKind::Float},
@@ -68,6 +69,7 @@ QString nodeKindToString(NodeKind kind)
         case NodeKind::Break: return QStringLiteral("break");
         case NodeKind::Continue: return QStringLiteral("continue");
         case NodeKind::Call: return QStringLiteral("call");
+        case NodeKind::Curly: return QStringLiteral("curly");
         case NodeKind::Identifier: return QStringLiteral("Identifier");
         case NodeKind::String: return QStringLiteral("string");
         case NodeKind::Float: return QStringLiteral("Float");
@@ -296,6 +298,9 @@ AstNode* AstNode::fromJson(const QJsonObject& json, AstNode* parent)
             break;
         case NodeKind::Call:
             node = new CallNode(text, range);
+            break;
+        case NodeKind::Curly:
+            node = new CurlyNode(text, range);
             break;
         case NodeKind::Assignment:
             node = new AssignmentNode(range);
@@ -561,6 +566,59 @@ QString CallNode::dump(int indent) const
 {
     QString indentStr = QString(QLatin1Char(' ')).repeated(indent * 2);
     QString result = indentStr + QLatin1String("Call");
+    
+    QString name = functionName();
+    if (!name.isEmpty()) {
+        result += QLatin1String(" ") + name;
+    }
+    
+    result += QStringLiteral(" (%1 args)\n").arg(argumentCount());
+    
+    for (AstNode* child : children()) {
+        result += child->dump(indent + 1);
+    }
+    
+    return result;
+}
+
+CurlyNode::CurlyNode(const QString& functionName, const KDevelop::RangeInRevision& range)
+    : AstNode(NodeKind::Curly, functionName, range)
+{
+    setIsLeaf(false);
+}
+
+QString CurlyNode::functionName() const
+{
+    if (children().isEmpty()) return QString();
+    
+    AstNode* nameNode = firstChild();
+    if (nameNode && nameNode->kind() == NodeKind::Identifier) {
+        return nameNode->text();
+    }
+    
+    return text();
+}
+
+QList<AstNode*> CurlyNode::arguments() const
+{
+    if (children().size() <= 1) return QList<AstNode*>();
+    
+    QList<AstNode*> result;
+    for (int i = 1; i < children().size(); ++i) {
+        result.append(children().at(i));
+    }
+    return result;
+}
+
+int CurlyNode::argumentCount() const
+{
+    return qMax(0, children().size() - 1);
+}
+
+QString CurlyNode::dump(int indent) const
+{
+    QString indentStr = QString(QLatin1Char(' ')).repeated(indent * 2);
+    QString result = indentStr + QLatin1String("Curly");
     
     QString name = functionName();
     if (!name.isEmpty()) {

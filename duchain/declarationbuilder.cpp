@@ -127,6 +127,16 @@ void DeclarationBuilder::startVisiting(AstNode* node)
             qCDebug(KDEV_JULIA) << "Visiting struct, creating declaration";
             
             AstNode* nameNode = node->firstChild();
+            
+            // Handle parametric struct: struct Foo{T} ... 
+            // First child is Curly node, not Identifier
+            if (nameNode && nameNode->kind() == NodeKind::Curly) {
+                // Get the actual name from the curly node
+                if (CurlyNode* curly = dynamic_cast<CurlyNode*>(nameNode)) {
+                    nameNode = curly->firstChild();
+                }
+            }
+            
             if (nameNode && nameNode->kind() == NodeKind::Identifier) {
                 QString name = nameNode->text();
                 if (!name.isEmpty()) {
