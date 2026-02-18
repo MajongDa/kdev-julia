@@ -27,6 +27,8 @@ NodeKind stringToNodeKind(const QString& kindStr)
         {QStringLiteral("continue"), NodeKind::Continue},
         {QStringLiteral("call"), NodeKind::Call},
         {QStringLiteral("curly"), NodeKind::Curly},
+        {QStringLiteral("where"), NodeKind::Where},
+        {QStringLiteral("parameters"), NodeKind::Parameters},
         {QStringLiteral("Identifier"), NodeKind::Identifier},
         {QStringLiteral("string"), NodeKind::String},
         {QStringLiteral("Float"), NodeKind::Float},
@@ -37,6 +39,12 @@ NodeKind stringToNodeKind(const QString& kindStr)
         {QStringLiteral("import"), NodeKind::Import},
         {QStringLiteral("export"), NodeKind::Export},
         {QStringLiteral("="), NodeKind::Equals},
+        {QStringLiteral("ref"), NodeKind::Ref},
+        {QStringLiteral("vect"), NodeKind::Vect},
+        {QStringLiteral("generator"), NodeKind::Generator},
+        {QStringLiteral("comprehension"), NodeKind::Generator},
+        {QStringLiteral("importpath"), NodeKind::ImportPath},
+        {QStringLiteral("macro_name"), NodeKind::MacroName},
         {QStringLiteral(":="), NodeKind::ColonEquals},
         {QStringLiteral("."), NodeKind::Dot},
         {QStringLiteral(":"), NodeKind::Colon},
@@ -70,6 +78,8 @@ QString nodeKindToString(NodeKind kind)
         case NodeKind::Continue: return QStringLiteral("continue");
         case NodeKind::Call: return QStringLiteral("call");
         case NodeKind::Curly: return QStringLiteral("curly");
+        case NodeKind::Where: return QStringLiteral("where");
+        case NodeKind::Parameters: return QStringLiteral("parameters");
         case NodeKind::Identifier: return QStringLiteral("Identifier");
         case NodeKind::String: return QStringLiteral("string");
         case NodeKind::Float: return QStringLiteral("Float");
@@ -86,7 +96,19 @@ QString nodeKindToString(NodeKind kind)
         case NodeKind::Semicolon: return QStringLiteral(";");
         case NodeKind::Comma: return QStringLiteral(",");
         case NodeKind::Comment: return QStringLiteral("comment");
+        case NodeKind::Whitespace: return QStringLiteral("Whitespace");
+        case NodeKind::Newline: return QStringLiteral("NewlineWs");
         case NodeKind::Error: return QStringLiteral("Error");
+        case NodeKind::Operator: return QStringLiteral("Operator");
+        case NodeKind::Tuple: return QStringLiteral("tuple");
+        case NodeKind::Array: return QStringLiteral("Array");
+        case NodeKind::Dict: return QStringLiteral("Dict");
+        case NodeKind::Ref: return QStringLiteral("ref");
+        case NodeKind::Vect: return QStringLiteral("vect");
+        case NodeKind::Generator: return QStringLiteral("generator");
+        case NodeKind::ImportPath: return QStringLiteral("importpath");
+        case NodeKind::MacroName: return QStringLiteral("macro_name");
+        case NodeKind::Unknown: return QStringLiteral("Unknown");
         default: return QStringLiteral("Unknown");
     }
 }
@@ -380,9 +402,42 @@ QString FunctionNode::functionName() const
     AstNode* header = firstChild();
     if (!header) return QString();
     
-    for (AstNode* child : header->children()) {
-        if (child->kind() == NodeKind::Identifier) {
-            return child->text();
+    // Handle where clause: where is the header
+    if (header->kind() == NodeKind::Where) {
+        AstNode* inner = header->firstChild();
+        if (!inner) return QString();
+        
+        // Inner could be :: (with return type) or call (without return type)
+        if (inner->kind() == NodeKind::TypeAnnotation) {
+            inner = inner->firstChild();
+        }
+        if (inner && inner->kind() == NodeKind::Call) {
+            AstNode* nameNode = inner->firstChild();
+            if (nameNode && nameNode->kind() == NodeKind::Identifier) {
+                return nameNode->text();
+            }
+        }
+        return QString();
+    }
+    
+    // Handle return type wrapper: header is :: 
+    if (header->kind() == NodeKind::TypeAnnotation) {
+        AstNode* callNode = header->firstChild();
+        if (!callNode) return QString();
+        if (callNode->kind() == NodeKind::Call) {
+            AstNode* nameNode = callNode->firstChild();
+            if (nameNode && nameNode->kind() == NodeKind::Identifier) {
+                return nameNode->text();
+            }
+        }
+        return QString();
+    }
+    
+    // Handle simple call (no return type, no where)
+    if (header->kind() == NodeKind::Call) {
+        AstNode* nameNode = header->firstChild();
+        if (nameNode && nameNode->kind() == NodeKind::Identifier) {
+            return nameNode->text();
         }
     }
     
@@ -396,10 +451,29 @@ AstNode* FunctionNode::arguments() const
     AstNode* header = firstChild();
     if (!header) return nullptr;
     
-    for (AstNode* child : header->children()) {
-        if (child->kind() == NodeKind::TypeAnnotation || child->kind() == NodeKind::Call) {
-            return child;
+    // Handle where clause: first child of where is the header
+    if (header->kind() == NodeKind::Where) {
+        AstNode* inner = header->firstChild();
+        if (!inner) return nullptr;
+        
+        // Inner could be :: (with return type) or call (without return type)
+        if (inner->kind() == NodeKind::TypeAnnotation) {
+            return inner;  // Return the :: node which contains call + return type
         }
+        if (inner->kind() == NodeKind::Call) {
+            return inner;  // Return the call node which contains name + params
+        }
+        return nullptr;
+    }
+    
+    // Handle return type wrapper: header is ::
+    if (header->kind() == NodeKind::TypeAnnotation) {
+        return header;  // Return the :: node
+    }
+    
+    // Handle simple call (no return type, no where)
+    if (header->kind() == NodeKind::Call) {
+        return header;
     }
     
     return nullptr;
@@ -413,13 +487,38 @@ AstNode* FunctionNode::body() const
 
 AstNode* FunctionNode::returnType() const
 {
-    AstNode* argsNode = arguments();
-    if (!argsNode || argsNode->kind() != NodeKind::TypeAnnotation) return nullptr;
+    if (children().isEmpty()) return nullptr;
     
-    const auto& children = argsNode->children();
-    if (children.size() < 2) return nullptr;
+    AstNode* header = firstChild();
+    if (!header) return nullptr;
     
-    return children.at(1);
+    // Handle where clause
+    if (header->kind() == NodeKind::Where) {
+        AstNode* inner = header->firstChild();
+        if (!inner) return nullptr;
+        
+        // With return type: inner is ::, return type is second child
+        if (inner->kind() == NodeKind::TypeAnnotation) {
+            const auto& children = inner->children();
+            if (children.size() >= 2) {
+                return children.at(1);  // Second child is return type
+            }
+        }
+        // Without return type: no return type
+        return nullptr;
+    }
+    
+    // Handle return type wrapper: header is ::
+    if (header->kind() == NodeKind::TypeAnnotation) {
+        const auto& children = header->children();
+        if (children.size() >= 2) {
+            return children.at(1);  // Second child is return type
+        }
+        return nullptr;
+    }
+    
+    // No return type (simple call)
+    return nullptr;
 }
 
 bool FunctionNode::hasReturnType() const
@@ -427,12 +526,69 @@ bool FunctionNode::hasReturnType() const
     return returnType() != nullptr;
 }
 
+QList<AstNode*> FunctionNode::parameters() const
+{
+    QList<AstNode*> params;
+    
+    AstNode* argsNode = arguments();
+    if (!argsNode) return params;
+    
+    // Case 1: argsNode is a Call (no return type, no where)
+    if (argsNode->kind() == NodeKind::Call) {
+        const auto& children = argsNode->children();
+        for (int i = 1; i < children.size(); ++i) {  // Skip first child (function name)
+            AstNode* child = children.at(i);
+            if (child && child->kind() == NodeKind::TypeAnnotation) {
+                params.append(child);
+            }
+        }
+        return params;
+    }
+    
+    // Case 2: argsNode is TypeAnnotation (has return type, possibly with where)
+    if (argsNode->kind() == NodeKind::TypeAnnotation) {
+        AstNode* callNode = argsNode->firstChild();
+        if (!callNode || callNode->kind() != NodeKind::Call) return params;
+        
+        const auto& children = callNode->children();
+        for (int i = 1; i < children.size(); ++i) {  // Skip first child (function name)
+            AstNode* child = children.at(i);
+            if (child && child->kind() == NodeKind::TypeAnnotation) {
+                params.append(child);
+            }
+        }
+        return params;
+    }
+    
+    return params;
+}
+
+QList<AstNode*> FunctionNode::typeParameters() const
+{
+    QList<AstNode*> typeParams;
+    
+    if (children().isEmpty()) return typeParams;
+    
+    AstNode* header = firstChild();
+    if (!header) return typeParams;
+    
+    // Handle where clause: type params are children of where (except first)
+    if (header->kind() == NodeKind::Where) {
+        const auto& children = header->children();
+        for (int i = 1; i < children.size(); ++i) {  // Skip first child (the header)
+            AstNode* child = children.at(i);
+            if (child && child->kind() == NodeKind::Identifier) {
+                typeParams.append(child);
+            }
+        }
+    }
+    
+    return typeParams;
+}
+
 int FunctionNode::argumentCount() const
 {
-    AstNode* argsNode = arguments();
-    if (!argsNode) return 0;
-    
-    return argsNode->children().size();
+    return parameters().size();
 }
 
 QString FunctionNode::dump(int indent) const
