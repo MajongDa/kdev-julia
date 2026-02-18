@@ -262,25 +262,24 @@ KDevelop::AbstractType* TypeMapper::typeFromAstNode(AstNode* node)
         return nullptr;
     }
 
-    if (node->kind() == NodeKind::Curly) {
-        return typeFromParametricType(node);
-    }
-
-    if (node->kind() == NodeKind::Call) {
-        QString typeName = node->text();
-        if (typeName.contains(QLatin1Char('{'))) {
+    switch (node->kind()) {
+        case NodeKind::Curly:
             return typeFromParametricType(node);
-        }
-    }
-
-    if (node->kind() == NodeKind::Identifier) {
-        return typeFromString(node->text());
-    }
-
-    if (node->kind() == NodeKind::TypeAnnotation) {
-        if (AstNode* typeNode = node->lastChild()) {
-            return typeFromAstNode(typeNode);
-        }
+        
+        case NodeKind::Call:
+            return typeFromString(node->text());
+        
+        case NodeKind::Identifier:
+            return typeFromString(node->text());
+        
+        case NodeKind::TypeAnnotation:
+            if (AstNode* typeNode = node->lastChild()) {
+                return typeFromAstNode(typeNode);
+            }
+            break;
+        
+        default:
+            break;
     }
 
     return typeFromString(node->text());
@@ -292,102 +291,72 @@ KDevelop::AbstractType* TypeMapper::typeFromParametricType(AstNode* node)
         return nullptr;
     }
     
-    QString typeName;
-    QList<AstNode*> typeParams;
-    
-    if (node->kind() == NodeKind::Call) {
-        auto* callNode = dynamic_cast<CallNode*>(node);
-        if (callNode) {
-            typeName = callNode->functionName();
-            typeParams = callNode->arguments();
-        } else {
-            typeName = node->text();
-            int bracePos = typeName.indexOf(QLatin1Char('{'));
-            if (bracePos > 0) {
-                typeName = typeName.left(bracePos);
-            }
-        }
-    } else {
-        typeName = node->text();
-        int bracePos = typeName.indexOf(QLatin1Char('{'));
-        if (bracePos > 0) {
-            typeName = typeName.left(bracePos);
-        }
+    CurlyNode* curly = dynamic_cast<CurlyNode*>(node);
+    if (!curly) {
+        return nullptr;
     }
     
-    if (typeName == QLatin1String("Array") || typeName == QLatin1String("Vector") || typeName == QLatin1String("Matrix")) {
-        auto* array = new KDevelop::ArrayType();
-        
-        if (!typeParams.isEmpty()) {
-            AstNode* firstParam = typeParams.first();
-            if (firstParam) {
-                KDevelop::AbstractType* elementType = typeFromAstNode(firstParam);
-                if (elementType) {
-                    array->setElementType(KDevelop::AbstractType::Ptr(elementType));
+    QString baseType = curly->functionName();
+    QList<AstNode*> typeParams = curly->arguments();
+    
+    JuliaType baseEnum = stringToJuliaType(baseType);
+    
+    switch (baseEnum) {
+        case JuliaType::Array: {
+            auto* array = new KDevelop::ArrayType();
+            if (!typeParams.isEmpty()) {
+                AstNode* firstParam = typeParams.first();
+                if (firstParam) {
+                    KDevelop::AbstractType* elementType = typeFromAstNode(firstParam);
+                    if (elementType) {
+                        array->setElementType(KDevelop::AbstractType::Ptr(elementType));
+                    }
                 }
             }
+            return array;
         }
         
-        return array;
-    }
-    
-    if (typeName == QLatin1String("Dict")) {
-        auto* map = new KDevelop::MapType();
-        
-        if (typeParams.size() >= 2) {
-            KDevelop::AbstractType* keyType = typeFromAstNode(typeParams.at(0));
-            KDevelop::AbstractType* valType = typeFromAstNode(typeParams.at(1));
-            if (keyType) {
-                map->replaceKeyType(KDevelop::AbstractType::Ptr(keyType));
+        case JuliaType::Dict: {
+            auto* map = new KDevelop::MapType();
+            if (typeParams.size() >= 2) {
+                KDevelop::AbstractType* keyType = typeFromAstNode(typeParams.at(0));
+                KDevelop::AbstractType* valType = typeFromAstNode(typeParams.at(1));
+                if (keyType) {
+                    map->replaceKeyType(KDevelop::AbstractType::Ptr(keyType));
+                }
+                if (valType) {
+                    map->replaceContentType(KDevelop::AbstractType::Ptr(valType));
+                }
             }
-            if (valType) {
-                map->replaceContentType(KDevelop::AbstractType::Ptr(valType));
+            return map;
+        }
+        
+        case JuliaType::Tuple: {
+            auto* structType = new KDevelop::StructureType();
+            return structType;
+        }
+        
+        case JuliaType::Union: {
+            auto* unsure = new KDevelop::UnsureType();
+            for (AstNode* param : typeParams) {
+                KDevelop::AbstractType* memberType = typeFromAstNode(param);
+                if (memberType) {
+                    unsure->addType(memberType->indexed());
+                }
             }
-            qCDebug(KDEV_JULIA) << "Dict key type:" << keyType->toString() << "value type:" << valType->toString();
+            return unsure;
         }
         
-        return map;
-    }
-    
-    if (typeName == QLatin1String("Tuple")) {
-        auto* structType = new KDevelop::StructureType();
-        
-        if (!typeParams.isEmpty()) {
-            qCDebug(KDEV_JULIA) << "Tuple has" << typeParams.size() << "type parameters";
+        case JuliaType::Set: {
+            auto* structType = new KDevelop::StructureType();
+            return structType;
         }
         
-        return structType;
-    }
-    
-    if (typeName == QLatin1String("Union")) {
-        auto* unsure = new KDevelop::UnsureType();
-        
-        for (AstNode* param : typeParams) {
-            KDevelop::AbstractType* memberType = typeFromAstNode(param);
-            if (memberType) {
-                unsure->addType(memberType->indexed());
-            }
+        default: {
+            auto* structType = new KDevelop::StructureType();
+            return structType;
         }
-        
-        qCDebug(KDEV_JULIA) << "Union has" << unsure->typesSize() << "members";
-        return unsure;
     }
-    
-    if (typeName == QLatin1String("Set")) {
-        auto* structType = new KDevelop::StructureType();
-        
-        if (!typeParams.isEmpty()) {
-            KDevelop::AbstractType* elemType = typeFromAstNode(typeParams.first());
-            if (elemType) {
-                qCDebug(KDEV_JULIA) << "Set element type:" << elemType->toString();
-            }
-        }
-        
-        return structType;
-    }
-    
-    auto* structType = new KDevelop::StructureType();
-    return structType;
 }
 
 }

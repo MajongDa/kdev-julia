@@ -15,8 +15,6 @@ public:
     ~UseBuilder() override;
 
 protected:
-    void startVisiting(AstNode* node) override;
-
     KDevelop::RangeInRevision editorFindRange(AstNode* fromNode, AstNode* toNode) override;
     KDevelop::QualifiedIdentifier identifierForNode(AstNode* node) override;
 

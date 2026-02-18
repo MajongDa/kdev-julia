@@ -38,6 +38,8 @@ enum class NodeKind {
     
     Call,
     Curly,
+    Where,
+    Parameters,
     Identifier,
     String,
     Float,
@@ -47,6 +49,11 @@ enum class NodeKind {
     Tuple,
     Array,
     Dict,
+    Ref,
+    Vect,
+    Generator,
+    ImportPath,
+    MacroName,
     
     TypeAnnotation,
     
@@ -131,6 +138,8 @@ public:
     
     bool hasReturnType() const;
     int argumentCount() const;
+    QList<AstNode*> parameters() const;
+    QList<AstNode*> typeParameters() const;
     
     QString dump(int indent = 0) const override;
 };

@@ -3,6 +3,8 @@
 
 #include <language/duchain/builders/abstractcontextbuilder.h>
 
+#include <QVector>
+
 #include "../parser/ast.h"
 
 namespace Julia {
@@ -27,13 +29,23 @@ private:
     KDevelop::TopDUContext* newTopContext(const KDevelop::RangeInRevision& range,
                                           KDevelop::ParsingEnvironmentFile* file) override;
 
+    void addImportedContexts();
+
+    AstNode* extractFunctionNameNode(FunctionNode* funcNode);
+    KDevelop::QualifiedIdentifier extractFunctionId(FunctionNode* funcNode);
+
     void visitFunction(AstNode* node);
+    void visitFunctionParameters(AstNode* node, FunctionNode* funcNode);
+    void visitFunctionBody(AstNode* node, FunctionNode* funcNode);
     void visitStruct(AstNode* node);
     void visitModule(AstNode* node);
     void visitBlock(AstNode* node);
     void visitFor(AstNode* node);
     void visitWhile(AstNode* node);
     void visitIf(AstNode* node);
+    void visitReturn(AstNode* node);
+
+    QVector<KDevelop::DUContext*> m_importedParentContexts;
 };
 
 }

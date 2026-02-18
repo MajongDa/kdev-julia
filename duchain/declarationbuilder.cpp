@@ -99,28 +99,109 @@ void DeclarationBuilder::startVisiting(AstNode* node)
             break;
         }
         case NodeKind::Function: {
-            qCDebug(KDEV_JULIA) << "Visiting function, creating declaration";
-            
-            AstNode* nameNode = node->firstChild();
-            if (nameNode && nameNode->kind() == NodeKind::Call) {
-                nameNode = nameNode->firstChild();
+            FunctionNode* funcNode = dynamic_cast<FunctionNode*>(node);
+            if (!funcNode) {
+                DeclarationBuilderBase::startVisiting(node);
+                break;
             }
             
-            if (nameNode && nameNode->kind() == NodeKind::Identifier) {
-                QString name = nameNode->text();
-                if (!name.isEmpty()) {
-                    auto* decl = openDeclaration<KDevelop::Declaration>(nameNode, node);
-                    if (decl) {
-                        decl->setKind(KDevelop::Declaration::Type);
-                        auto* funcType = new KDevelop::FunctionType();
-                        decl->setType(KDevelop::AbstractType::Ptr(funcType));
-                        qCDebug(KDEV_JULIA) << "Function declaration created:" << name;
+            QString name = funcNode->functionName();
+            
+            if (!name.isEmpty()) {
+                AstNode* nameNode = funcNode->firstChild();
+                if (nameNode && nameNode->kind() == NodeKind::Call) {
+                    nameNode = nameNode->firstChild();
+                }
+                
+                auto* decl = openDeclaration<KDevelop::FunctionDeclaration>(nameNode, node);
+                if (decl) {
+                    decl->setKind(KDevelop::Declaration::Type);
+                    decl->setInSymbolTable(false);
+                    
+                    // Create FunctionType
+                    KDevelop::FunctionType::Ptr funcType(new KDevelop::FunctionType());
+                    
+                    // Add parameter types using the new parameters() method
+                    QList<AstNode*> params = funcNode->parameters();
+                    for (AstNode* param : params) {
+                        if (!param) continue;
+                        
+                        // param is a TypeAnnotation node: a::Int
+                        // first child is the parameter name, last child is the type
+                        AstNode* paramTypeNode = param->lastChild();
+                        if (paramTypeNode) {
+                            KDevelop::AbstractType* paramType = TypeMapper::typeFromAstNode(paramTypeNode);
+                            if (paramType) {
+                                funcType->addArgument(KDevelop::AbstractType::Ptr(paramType));
+                            } else {
+                                auto* mixedType = new KDevelop::IntegralType(KDevelop::IntegralType::TypeMixed);
+                                funcType->addArgument(KDevelop::AbstractType::Ptr(mixedType));
+                            }
+                        }
+                    }
+                    
+                    // Add return type
+                    if (funcNode->hasReturnType()) {
+                        AstNode* retTypeNode = funcNode->returnType();
+                        if (retTypeNode) {
+                            KDevelop::AbstractType* retType = TypeMapper::typeFromAstNode(retTypeNode);
+                            if (retType) {
+                                funcType->setReturnType(KDevelop::AbstractType::Ptr(retType));
+                            }
+                        }
+                    }
+                    
+                    decl->setType(funcType);
+                    closeDeclaration();
+                }
+            }
+            
+            // Create declarations for type parameters (from where clause)
+            QList<AstNode*> typeParams = funcNode->typeParameters();
+            for (AstNode* typeParam : typeParams) {
+                if (!typeParam || typeParam->kind() != NodeKind::Identifier) continue;
+                
+                QString typeParamName = typeParam->text();
+                if (!typeParamName.isEmpty()) {
+                    auto* tpDecl = openDeclaration<KDevelop::Declaration>(typeParam, typeParam);
+                    if (tpDecl) {
+                        tpDecl->setKind(KDevelop::Declaration::Type);
+                        auto* structType = new KDevelop::StructureType();
+                        tpDecl->setType(KDevelop::AbstractType::Ptr(structType));
                         closeDeclaration();
                     }
                 }
             }
             
             DeclarationBuilderBase::startVisiting(node);
+            
+            // Now create parameter declarations - the Function context has been created by startVisiting
+            QList<AstNode*> params = funcNode->parameters();
+            for (AstNode* param : params) {
+                if (!param || param->kind() != NodeKind::TypeAnnotation) continue;
+                
+                AstNode* paramNameNode = param->firstChild();
+                AstNode* paramTypeNode = param->lastChild();
+                if (!paramNameNode || paramNameNode->kind() != NodeKind::Identifier) continue;
+                
+                QString paramName = paramNameNode->text();
+                auto* paramDecl = openDeclaration<KDevelop::Declaration>(paramNameNode, param);
+                if (paramDecl) {
+                    paramDecl->setKind(KDevelop::Declaration::Instance);
+                    
+                    if (paramTypeNode) {
+                        KDevelop::AbstractType* paramType = TypeMapper::typeFromAstNode(paramTypeNode);
+                        if (paramType) {
+                            paramDecl->setType(KDevelop::AbstractType::Ptr(paramType));
+                        } else {
+                            auto* mixedType = new KDevelop::IntegralType(KDevelop::IntegralType::TypeMixed);
+                            paramDecl->setType(KDevelop::AbstractType::Ptr(mixedType));
+                        }
+                    }
+                    qCDebug(KDEV_JULIA) << "Parameter declaration created:" << paramName << "range:" << paramDecl->range() << "context:" << currentContext();
+                    closeDeclaration();
+                }
+            }
             break;
         }
         case NodeKind::Struct: {
@@ -439,6 +520,17 @@ KDevelop::DUContext* DeclarationBuilder::contextFromNode(AstNode* node)
         return nullptr;
     }
     return node->context;
+}
+
+KDevelop::QualifiedIdentifier DeclarationBuilder::identifierForNode(AstNode* node)
+{
+    if (!node) {
+        return KDevelop::QualifiedIdentifier();
+    }
+    if (node->kind() == NodeKind::Identifier) {
+        return KDevelop::QualifiedIdentifier(node->text());
+    }
+    return KDevelop::QualifiedIdentifier();
 }
 
 }

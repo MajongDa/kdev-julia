@@ -6,84 +6,13 @@
 
 #include "../parser/ast.h"
 #include "juliadebug.h"
+#include "contextbuilder.h"
 
 namespace Julia {
 
 UseBuilder::UseBuilder() = default;
 
 UseBuilder::~UseBuilder() = default;
-
-void UseBuilder::startVisiting(AstNode* node)
-{
-    if (!node) {
-        return;
-    }
-
-    switch (node->kind()) {
-        case NodeKind::TopLevel:
-        case NodeKind::Block:
-            for (AstNode* child : node->children()) {
-                startVisiting(child);
-            }
-            break;
-
-        case NodeKind::Function:
-        case NodeKind::Struct:
-        case NodeKind::Module:
-        case NodeKind::Abstract:
-        case NodeKind::Primitive:
-        case NodeKind::Macro:
-            for (AstNode* child : node->children()) {
-                startVisiting(child);
-            }
-            break;
-
-        case NodeKind::Identifier:
-            visitIdentifier(node);
-            break;
-
-        case NodeKind::Call:
-            visitCall(node);
-            for (AstNode* child : node->children()) {
-                startVisiting(child);
-            }
-            break;
-
-        case NodeKind::Assignment:
-        case NodeKind::Equals:
-            if (AstNode* lhs = node->firstChild()) {
-                if (lhs->kind() == NodeKind::TypeAnnotation) {
-                    for (AstNode* child : lhs->children()) {
-                        startVisiting(child);
-                    }
-                } else if (lhs->kind() == NodeKind::Identifier) {
-                    startVisiting(lhs);
-                } else {
-                    for (AstNode* child : lhs->children()) {
-                        startVisiting(child);
-                    }
-                }
-            }
-            if (AstNode* rhs = node->lastChild()) {
-                startVisiting(rhs);
-            }
-            break;
-
-        case NodeKind::TypeAnnotation:
-            for (AstNode* child : node->children()) {
-                if (child) {
-                    startVisiting(child);
-                }
-            }
-            break;
-
-        default:
-            for (AstNode* child : node->children()) {
-                startVisiting(child);
-            }
-            break;
-    }
-}
 
 void UseBuilder::visitIdentifier(AstNode* node)
 {
@@ -119,23 +48,6 @@ void UseBuilder::visitIdentifier(AstNode* node)
         if (parent->kind() == NodeKind::TypeAnnotation && parent->firstChild() == node) {
             qCDebug(KDEV_JULIA) << "  Skipping - variable in type annotation";
             return;
-        }
-    }
-    
-    {
-        KDevelop::DUChainReadLocker lock(KDevelop::DUChain::lock());
-        
-        // Search in current context
-        auto* ctx = currentContext();
-        
-        if (ctx) {
-            auto decls = ctx->findDeclarations(id, range.start);
-            qCDebug(KDEV_JULIA) << "  Context:" << ctx << "findDeclarations for" << id << "at" << range.start << "found:" << decls.size();
-            for (auto* d : decls) {
-                qCDebug(KDEV_JULIA) << "    Declaration:" << d->identifier().toString() << "range:" << d->range();
-            }
-        } else {
-            qCDebug(KDEV_JULIA) << "  No context!";
         }
     }
     

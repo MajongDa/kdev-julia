@@ -59,6 +59,9 @@ void ContextBuilder::startVisiting(AstNode* node)
         case NodeKind::If:
             visitIf(node);
             break;
+        case NodeKind::Return:
+            visitReturn(node);
+            break;
         default:
             for (AstNode* child : node->children()) {
                 startVisiting(child);
@@ -73,27 +76,103 @@ void ContextBuilder::visitFunction(AstNode* node)
         return;
     }
     
-    AstNode* nameNode = node->firstChild();
-    if (nameNode && nameNode->kind() == NodeKind::Call) {
-        nameNode = nameNode->firstChild();
+    FunctionNode* funcNode = dynamic_cast<FunctionNode*>(node);
+    if (!funcNode) {
+        return;
     }
     
-    KDevelop::QualifiedIdentifier funcId;
-    if (nameNode && nameNode->kind() == NodeKind::Identifier) {
-        funcId = KDevelop::QualifiedIdentifier(nameNode->text());
-    }
+    // Step 1: Parse parameters into parameter context
+    visitFunctionParameters(node, funcNode);
+    
+    // Step 2: Parse body into body context (imports parameter context)
+    visitFunctionBody(node, funcNode);
+}
+
+void ContextBuilder::visitFunctionParameters(AstNode* node, FunctionNode* funcNode)
+{
+    KDevelop::QualifiedIdentifier funcId = extractFunctionId(funcNode);
     
     KDevelop::RangeInRevision range = node->range();
     
-    openContext(node, range, KDevelop::DUContext::Function, funcId);
+    openContext(funcNode, range, KDevelop::DUContext::Function, funcId);
     
     for (AstNode* child : node->children()) {
-        if (child && child != nameNode) {
-            startVisiting(child);
+        if (!child) continue;
+        if (child == funcNode->body()) {
+            continue;
         }
+        startVisiting(child);
     }
     
+    m_importedParentContexts.append(currentContext());
+    
     closeContext();
+}
+
+void ContextBuilder::visitFunctionBody(AstNode* /*node*/, FunctionNode* funcNode)
+{
+    KDevelop::QualifiedIdentifier funcId = extractFunctionId(funcNode);
+    
+    AstNode* bodyNode = funcNode->body();
+    if (!bodyNode) {
+        return;
+    }
+    
+    KDevelop::RangeInRevision bodyRange = bodyNode->range();
+    openContext(bodyNode, bodyRange, KDevelop::DUContext::Other, funcId);
+    
+    addImportedContexts();
+    
+    startVisiting(bodyNode);
+    
+    closeContext();
+}
+
+void ContextBuilder::addImportedContexts()
+{
+    if (compilingContexts() && !m_importedParentContexts.isEmpty()) {
+        for (KDevelop::DUContext* imported : m_importedParentContexts) {
+            currentContext()->addImportedParentContext(imported);
+        }
+        m_importedParentContexts.clear();
+    }
+}
+
+AstNode* ContextBuilder::extractFunctionNameNode(FunctionNode* funcNode)
+{
+    if (!funcNode) return nullptr;
+    
+    AstNode* nameNode = funcNode->firstChild();
+    if (!nameNode) return nullptr;
+    
+    if (nameNode->kind() == NodeKind::Where) {
+        AstNode* inner = nameNode->firstChild();
+        if (inner && inner->kind() == NodeKind::TypeAnnotation) {
+            inner = inner->firstChild();
+        }
+        if (inner && inner->kind() == NodeKind::Call) {
+            return inner->firstChild();
+        }
+        return nullptr;
+    } else if (nameNode->kind() == NodeKind::TypeAnnotation) {
+        AstNode* callNode = nameNode->firstChild();
+        if (callNode && callNode->kind() == NodeKind::Call) {
+            return callNode->firstChild();
+        }
+    } else if (nameNode->kind() == NodeKind::Call) {
+        return nameNode->firstChild();
+    }
+    
+    return nameNode;
+}
+
+KDevelop::QualifiedIdentifier ContextBuilder::extractFunctionId(FunctionNode* funcNode)
+{
+    AstNode* nameNode = extractFunctionNameNode(funcNode);
+    if (nameNode && nameNode->kind() == NodeKind::Identifier) {
+        return KDevelop::QualifiedIdentifier(nameNode->text());
+    }
+    return KDevelop::QualifiedIdentifier();
 }
 
 void ContextBuilder::visitStruct(AstNode* node)
@@ -104,7 +183,7 @@ void ContextBuilder::visitStruct(AstNode* node)
     
     AstNode* nameNode = node->firstChild();
     
-    // Handle parametric struct: struct Foo{T} ...
+    // Handle parametric struct: struct Foo{T} ... 
     // First child is Curly node, not Identifier
     if (nameNode && nameNode->kind() == NodeKind::Curly) {
         if (CurlyNode* curly = dynamic_cast<CurlyNode*>(nameNode)) {
@@ -208,6 +287,23 @@ void ContextBuilder::visitWhile(AstNode* node)
 }
 
 void ContextBuilder::visitIf(AstNode* node)
+{
+    if (!node) {
+        return;
+    }
+    
+    KDevelop::RangeInRevision range = node->range();
+    
+    openContext(node, range, KDevelop::DUContext::Other, KDevelop::QualifiedIdentifier());
+    
+    for (AstNode* child : node->children()) {
+        startVisiting(child);
+    }
+    
+    closeContext();
+}
+
+void ContextBuilder::visitReturn(AstNode* node)
 {
     if (!node) {
         return;

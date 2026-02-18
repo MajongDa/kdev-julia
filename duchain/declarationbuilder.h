@@ -25,6 +25,7 @@ protected:
     KDevelop::RangeInRevision editorFindRange(AstNode* fromNode, AstNode* toNode) override;
     void setContextOnNode(AstNode* node, KDevelop::DUContext* context) override;
     KDevelop::DUContext* contextFromNode(AstNode* node) override;
+    KDevelop::QualifiedIdentifier identifierForNode(AstNode* node) override;
 };
 
 }
