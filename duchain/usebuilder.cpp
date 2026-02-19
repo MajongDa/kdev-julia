@@ -3,14 +3,20 @@
 #include <QDebug>
 
 #include <language/duchain/duchain.h>
+#include <language/duchain/duchainlock.h>
 
 #include "../parser/ast.h"
-#include "juliadebug.h"
 #include "contextbuilder.h"
+#include "expressionvisitor.h"
+#include "juliaeditorintegrator.h"
+#include "juliadebug.h"
 
 namespace Julia {
 
-UseBuilder::UseBuilder() = default;
+UseBuilder::UseBuilder(JuliaEditorIntegrator* editor)
+    : m_editor(editor)
+{
+}
 
 UseBuilder::~UseBuilder() = default;
 
@@ -20,6 +26,8 @@ void UseBuilder::visitIdentifier(AstNode* node)
         return;
     }
 
+    qCDebug(KDEV_JULIA) << ">>> UseBuilder::visitIdentifier:" << node->text() << "range:" << node->range();
+
     if (AstNode* parent = node->parent()) {
         if (parent->kind() == NodeKind::Function ||
             parent->kind() == NodeKind::Struct ||
@@ -27,31 +35,36 @@ void UseBuilder::visitIdentifier(AstNode* node)
             parent->kind() == NodeKind::Macro ||
             parent->kind() == NodeKind::Abstract ||
             parent->kind() == NodeKind::Primitive) {
-            return;
-        }
-    }
-
-    qCDebug(KDEV_JULIA) << "Creating use for identifier:" << node->text() << "range:" << node->range();
-    
-    KDevelop::QualifiedIdentifier id = identifierForNode(node);
-    KDevelop::RangeInRevision range = editorFindRange(node, node);
-    
-    qCDebug(KDEV_JULIA) << "  editorFindRange returned:" << range;
-    
-    // Skip if parent is a declaration: Equals/Assignment with this as first child, or TypeAnnotation (variable name in type annotation)
-    if (AstNode* parent = node->parent()) {
-        if ((parent->kind() == NodeKind::Equals || parent->kind() == NodeKind::Assignment) && 
-            parent->firstChild() == node) {
-            qCDebug(KDEV_JULIA) << "  Skipping - declaration position (Equals/Assignment)";
-            return;
-        }
-        if (parent->kind() == NodeKind::TypeAnnotation && parent->firstChild() == node) {
-            qCDebug(KDEV_JULIA) << "  Skipping - variable in type annotation";
+            qCDebug(KDEV_JULIA) << "  Skipping - is declaration site";
             return;
         }
     }
     
-    newUse(node);
+    ExpressionVisitor v(currentContext());
+    v.visitNode(node);
+    
+    auto type = v.lastType();
+    if (type) {
+        qCDebug(KDEV_JULIA) << "  Inferred type:" << type->toString();
+    }
+    
+    KDevelop::RangeInRevision useRange = editorFindRange(node, node);
+    
+    auto decl = v.lastDeclaration();
+    if (decl) {
+        qCDebug(KDEV_JULIA) << "  Found declaration:" << decl->identifier().toString() << "range:" << decl->range();
+        if (decl->range() == useRange) {
+            qCDebug(KDEV_JULIA) << "  Skipping - is declaration itself";
+            return;
+        }
+        UseBuilderBase::newUse(useRange, KDevelop::DeclarationPointer(decl));
+        qCDebug(KDEV_JULIA) << "  Created use for declaration";
+        return;
+    }
+    
+    qCDebug(KDEV_JULIA) << "  No declaration found - creating empty use";
+    UseBuilderBase::newUse(useRange, KDevelop::DeclarationPointer());
+    qCDebug(KDEV_JULIA) << "<<< UseBuilder::visitIdentifier DONE";
 }
 
 void UseBuilder::visitCall(AstNode* node)
@@ -60,10 +73,67 @@ void UseBuilder::visitCall(AstNode* node)
         return;
     }
 
-    if (AstNode* funcName = node->firstChild()) {
-        if (funcName->kind() == NodeKind::Identifier) {
-            qCDebug(KDEV_JULIA) << "Creating use for function call:" << funcName->text();
-            newUse(funcName);
+    qCDebug(KDEV_JULIA) << ">>> UseBuilder::visitCall:" << node->range();
+
+    // Call base class first to properly set up context
+    UseBuilderBase::visitCall(node);
+
+    KDevelop::DUContext* ctx = currentContext();
+    qCDebug(KDEV_JULIA) << "  UseBuilder::visitCall currentContext:" << ctx;
+    
+    if (!ctx) {
+        qCDebug(KDEV_JULIA) << "  No context, skipping ExpressionVisitor";
+        return;
+    }
+
+    ExpressionVisitor v(ctx);
+    v.visitNode(node);
+    
+    auto type = v.lastType();
+    if (type) {
+        qCDebug(KDEV_JULIA) << "  Inferred type:" << type->toString();
+    }
+    
+    auto decl = v.lastDeclaration();
+    if (decl) {
+        qCDebug(KDEV_JULIA) << "  Found declaration:" << decl->identifier().toString();
+        AstNode* funcName = node->firstChild();
+        if (funcName && funcName->kind() == NodeKind::Identifier) {
+            KDevelop::RangeInRevision useRange = editorFindRange(funcName, funcName);
+            UseBuilderBase::newUse(useRange, KDevelop::DeclarationPointer(decl));
+            qCDebug(KDEV_JULIA) << "  Created use for function call";
+        }
+    } else {
+        qCDebug(KDEV_JULIA) << "  No declaration found";
+    }
+    qCDebug(KDEV_JULIA) << "<<< UseBuilder::visitCall DONE";
+}
+
+void UseBuilder::visitDot(AstNode* node)
+{
+    if (!node) {
+        return;
+    }
+
+    QList<AstNode*> children = node->children();
+    if (children.size() < 2) {
+        return;
+    }
+
+    AstNode* lhs = children.first();
+    AstNode* attr = children.last();
+    if (!lhs || !attr) {
+        return;
+    }
+
+    ExpressionVisitor v(currentContext());
+    v.visitNode(node);
+
+    KDevelop::DeclarationPointer decl = v.lastDeclaration();
+    if (decl) {
+        KDevelop::RangeInRevision useRange = editorFindRange(attr, attr);
+        if (decl->range() != useRange) {
+            UseBuilderBase::newUse(useRange, decl);
         }
     }
 }
@@ -72,6 +142,10 @@ KDevelop::RangeInRevision UseBuilder::editorFindRange(AstNode* fromNode, AstNode
 {
     if (!fromNode || !toNode) {
         return KDevelop::RangeInRevision(0, 0, 0, 0);
+    }
+
+    if (m_editor) {
+        return m_editor->findRange(fromNode, toNode);
     }
 
     return fromNode->range();

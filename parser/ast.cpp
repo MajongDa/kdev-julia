@@ -1,4 +1,5 @@
 #include "ast.h"
+#include "../duchain/astvisitor.h"
 #include <QJsonDocument>
 #include <QJsonArray>
 #include <QDebug>
@@ -34,6 +35,7 @@ NodeKind stringToNodeKind(const QString& kindStr)
         {QStringLiteral("Float"), NodeKind::Float},
         {QStringLiteral("Integer"), NodeKind::Integer},
         {QStringLiteral("Bool"), NodeKind::Bool},
+        {QStringLiteral("Operator"), NodeKind::Operator},
         {QStringLiteral("::"), NodeKind::TypeAnnotation},
         {QStringLiteral("using"), NodeKind::Using},
         {QStringLiteral("import"), NodeKind::Import},
@@ -51,7 +53,22 @@ NodeKind stringToNodeKind(const QString& kindStr)
         {QStringLiteral(";"), NodeKind::Semicolon},
         {QStringLiteral(","), NodeKind::Comma},
         {QStringLiteral("comment"), NodeKind::Comment},
-        {QStringLiteral("Error"), NodeKind::Error}
+        {QStringLiteral("Error"), NodeKind::Error},
+        // Additional missing mappings
+        {QStringLiteral("global"), NodeKind::Identifier},
+        {QStringLiteral("local"), NodeKind::Identifier},
+        {QStringLiteral("try"), NodeKind::Block},
+        {QStringLiteral("catch"), NodeKind::Block},
+        {QStringLiteral("finally"), NodeKind::Block},
+        {QStringLiteral("begin"), NodeKind::Block},
+        {QStringLiteral("let"), NodeKind::Block},
+        // TODO: Better approach - map operator text to NodeKind::Operator
+        // Currently JuliaSyntax sends {"kind": "Identifier", "text": "+"} for operators
+        // We should map "+", "-", "*", etc. directly to NodeKind::Operator
+        // This would require adding many mappings like:
+        // {QStringLiteral("+"), NodeKind::Operator},
+        // {QStringLiteral("-"), NodeKind::Operator},
+        // etc.
     };
     
     return kindMap.value(kindStr, NodeKind::Unknown);
@@ -264,6 +281,61 @@ bool AstNode::isType() const
            m_kind == NodeKind::TypeAnnotation;
 }
 
+void AstNode::accept(AstVisitor* visitor)
+{
+    switch (m_kind) {
+        case NodeKind::TopLevel: visitor->visitTopLevel(this); break;
+        case NodeKind::Block: visitor->visitBlock(this); break;
+        case NodeKind::Function: visitor->visitFunction(this); break;
+        case NodeKind::Struct: visitor->visitStruct(this); break;
+        case NodeKind::Module: visitor->visitModule(this); break;
+        case NodeKind::Abstract: visitor->visitAbstract(this); break;
+        case NodeKind::Primitive: visitor->visitPrimitive(this); break;
+        case NodeKind::Macro: visitor->visitMacroCall(this); break;
+        case NodeKind::MacroCall: visitor->visitMacroCall(this); break;
+        case NodeKind::Assignment: visitor->visitAssignment(this); break;
+        case NodeKind::Return: visitor->visitReturn(this); break;
+        case NodeKind::If: visitor->visitIf(this); break;
+        case NodeKind::While: visitor->visitWhile(this); break;
+        case NodeKind::For: visitor->visitFor(this); break;
+        case NodeKind::Break: visitor->visitBreak(this); break;
+        case NodeKind::Continue: visitor->visitContinue(this); break;
+        case NodeKind::Call: visitor->visitCall(this); break;
+        case NodeKind::Curly: visitor->visitCurly(this); break;
+        case NodeKind::Where: visitor->visitWhere(this); break;
+        case NodeKind::Parameters: visitor->visitParameters(this); break;
+        case NodeKind::Identifier: visitor->visitIdentifier(this); break;
+        case NodeKind::String: visitor->visitString(this); break;
+        case NodeKind::Float: visitor->visitFloat(this); break;
+        case NodeKind::Integer: visitor->visitInteger(this); break;
+        case NodeKind::Bool: visitor->visitBool(this); break;
+        case NodeKind::Operator: visitor->visitOperator(this); break;
+        case NodeKind::Tuple: visitor->visitTuple(this); break;
+        case NodeKind::Array: visitor->visitArray(this); break;
+        case NodeKind::Dict: visitor->visitDict(this); break;
+        case NodeKind::Ref: visitor->visitRef(this); break;
+        case NodeKind::Vect: visitor->visitVect(this); break;
+        case NodeKind::Generator: visitor->visitGenerator(this); break;
+        case NodeKind::ImportPath: visitor->visitImportPath(this); break;
+        case NodeKind::MacroName: visitor->visitMacroName(this); break;
+        case NodeKind::TypeAnnotation: visitor->visitTypeAnnotation(this); break;
+        case NodeKind::Using: visitor->visitUsing(this); break;
+        case NodeKind::Import: visitor->visitImport(this); break;
+        case NodeKind::Export: visitor->visitExport(this); break;
+        case NodeKind::Equals: visitor->visitEquals(this); break;
+        case NodeKind::ColonEquals: visitor->visitColonEquals(this); break;
+        case NodeKind::Dot: visitor->visitDot(this); break;
+        case NodeKind::Colon: visitor->visitColon(this); break;
+        case NodeKind::Semicolon: visitor->visitSemicolon(this); break;
+        case NodeKind::Comma: visitor->visitComma(this); break;
+        case NodeKind::Comment: visitor->visitComment(this); break;
+        case NodeKind::Whitespace: visitor->visitWhitespace(this); break;
+        case NodeKind::Newline: visitor->visitNewline(this); break;
+        case NodeKind::Error: visitor->visitError(this); break;
+        case NodeKind::Unknown: visitor->visitUnknown(this); break;
+    }
+}
+
 QString AstNode::dump(int indent) const
 {
     QString indentStr = QString(QLatin1Char(' ')).repeated(indent * 2);
@@ -458,7 +530,11 @@ AstNode* FunctionNode::arguments() const
         
         // Inner could be :: (with return type) or call (without return type)
         if (inner->kind() == NodeKind::TypeAnnotation) {
-            return inner;  // Return the :: node which contains call + return type
+            AstNode* callNode = inner->firstChild();
+            if (callNode && callNode->kind() == NodeKind::Call) {
+                return callNode;  // Return just the Call, not the TypeAnnotation
+            }
+            return inner;  // Fallback
         }
         if (inner->kind() == NodeKind::Call) {
             return inner;  // Return the call node which contains name + params
@@ -468,7 +544,11 @@ AstNode* FunctionNode::arguments() const
     
     // Handle return type wrapper: header is ::
     if (header->kind() == NodeKind::TypeAnnotation) {
-        return header;  // Return the :: node
+        AstNode* callNode = header->firstChild();
+        if (callNode && callNode->kind() == NodeKind::Call) {
+            return callNode;  // Return just the Call, not the TypeAnnotation
+        }
+        return header;  // Fallback
     }
     
     // Handle simple call (no return type, no where)

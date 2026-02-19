@@ -58,9 +58,15 @@ set(kdevjulialanguagesupport_PART_SRCS
     parser/ast.cpp
     parser/juliaparsejob.cpp
     # DUChain builders
+    duchain/astvisitor.cpp
+    duchain/juliaastdefaultvisitor.cpp
     duchain/contextbuilder.cpp
     duchain/declarationbuilder.cpp
     duchain/usebuilder.cpp
+    duchain/expressionvisitor.cpp
+    duchain/helpers.cpp
+    duchain/juliaeditorintegrator.cpp
+    duchain/juliaducontext.cpp
     # Type mapping
     types/types.cpp
     # Completion

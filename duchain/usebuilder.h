@@ -5,21 +5,30 @@
 
 #include "../parser/ast.h"
 #include "contextbuilder.h"
+#include "expressionvisitor.h"
 
 namespace Julia {
 
-class UseBuilder : public KDevelop::AbstractUseBuilder<Julia::AstNode, Julia::AstNode, ContextBuilder>
+class JuliaEditorIntegrator;
+
+typedef KDevelop::AbstractUseBuilder<Julia::AstNode, Julia::AstNode, ContextBuilder> UseBuilderBase;
+
+class UseBuilder : public UseBuilderBase
 {
 public:
-    UseBuilder();
+    UseBuilder(JuliaEditorIntegrator* editor = nullptr);
     ~UseBuilder() override;
 
 protected:
     KDevelop::RangeInRevision editorFindRange(AstNode* fromNode, AstNode* toNode) override;
     KDevelop::QualifiedIdentifier identifierForNode(AstNode* node) override;
 
-    void visitIdentifier(AstNode* node);
-    void visitCall(AstNode* node);
+    void visitIdentifier(AstNode* node) override;
+    void visitCall(AstNode* node) override;
+    void visitDot(AstNode* node) override;
+
+private:
+    JuliaEditorIntegrator* m_editor;
 };
 
 }

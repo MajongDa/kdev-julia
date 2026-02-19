@@ -10,22 +10,40 @@
 
 namespace Julia {
 
+class JuliaEditorIntegrator;
+
 typedef KDevelop::AbstractTypeBuilder<Julia::AstNode, Julia::AstNode, ContextBuilder> TypeBuilderBase;
 typedef KDevelop::AbstractDeclarationBuilder<Julia::AstNode, Julia::AstNode, TypeBuilderBase> DeclarationBuilderBase;
 
 class DeclarationBuilder : public DeclarationBuilderBase
 {
 public:
-    DeclarationBuilder();
+    DeclarationBuilder(JuliaEditorIntegrator* editor = nullptr);
     ~DeclarationBuilder() override;
 
 protected:
-    void startVisiting(AstNode* node) override;
-
+    // Required overrides from base
     KDevelop::RangeInRevision editorFindRange(AstNode* fromNode, AstNode* toNode) override;
     void setContextOnNode(AstNode* node, KDevelop::DUContext* context) override;
     KDevelop::DUContext* contextFromNode(AstNode* node) override;
     KDevelop::QualifiedIdentifier identifierForNode(AstNode* node) override;
+
+    // Declaration creation via virtual dispatch (Python-style)
+    void visitFunction(AstNode* node) override;
+    void visitStruct(AstNode* node) override;
+    void visitModule(AstNode* node) override;
+    void visitAbstract(AstNode* node) override;
+    void visitPrimitive(AstNode* node) override;
+    void visitUsing(AstNode* node) override;
+    void visitImport(AstNode* node) override;
+    void visitExport(AstNode* node) override;
+
+    // Helper methods
+    void visitFunctionParameters(AstNode* node, FunctionNode* funcNode);
+    void visitFunctionBody(AstNode* node, FunctionNode* funcNode);
+
+private:
+    JuliaEditorIntegrator* m_editor;
 };
 
 }

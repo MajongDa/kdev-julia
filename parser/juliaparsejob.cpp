@@ -16,6 +16,7 @@
 #include "../duchain/contextbuilder.h"
 #include "../duchain/declarationbuilder.h"
 #include "../duchain/usebuilder.h"
+#include "../duchain/juliaeditorintegrator.h"
 #include "juliadebug.h"
 
 namespace Julia {
@@ -85,11 +86,31 @@ bool JuliaParseJob::parseWithJuliaBridge(const QString& content)
         return false;
     }
 
+    // Debug: Dump the raw JSON received from Julia
+    qCDebug(KDEV_JULIA) << "=== RAW JSON FROM JULIA ===";
+    QString jsonStr = QString::fromUtf8(json);
+    // Truncate if too long
+    if (jsonStr.length() > 5000) {
+        jsonStr = jsonStr.left(5000).append(QStringLiteral("... [TRUNCATED]"));
+    }
+    qCDebug(KDEV_JULIA) << jsonStr;
+    qCDebug(KDEV_JULIA) << "=== END JSON ===";
+
     AstNode* ast = parseJsonResponse(json);
     if (!ast) {
         qCDebug(KDEV_JULIA) << "Failed to parse JSON response";
         return false;
     }
+
+    // Debug: Dump the parsed AST
+    qCDebug(KDEV_JULIA) << "=== PARSED AST ===";
+    QString astDump = ast->dump(0);
+    // Truncate if too long
+    if (astDump.length() > 10000) {
+        astDump = astDump.left(10000).append(QStringLiteral("\n... [TRUNCATED]"));
+    }
+    qCDebug(KDEV_JULIA) << astDump;
+    qCDebug(KDEV_JULIA) << "=== END AST ===";
 
     if (!buildDUChain(ast)) {
         delete ast;
@@ -129,7 +150,9 @@ bool JuliaParseJob::buildDUChain(AstNode* ast)
 
     // Build the DUChain using DeclarationBuilder
     qCDebug(KDEV_JULIA) << "Creating DeclarationBuilder...";
-    DeclarationBuilder builder;
+    JuliaEditorIntegrator editor;
+    DeclarationBuilder builder(&editor);
+    builder.setEditor(&editor);
     qCDebug(KDEV_JULIA) << "Calling builder.build()...";
     KDevelop::ReferencedTopDUContext newContext = builder.build(document(), ast, toUpdate);
     qCDebug(KDEV_JULIA) << "Builder returned:" << newContext.data();
@@ -166,10 +189,11 @@ bool JuliaParseJob::buildDUChain(AstNode* ast)
     setDuChain(newContext);
     
     // Build uses for highlighting (references to declarations)
-    qCDebug(KDEV_JULIA) << "Building uses for highlighting...";
-    UseBuilder usebuilder;
+    qCDebug(KDEV_JULIA) << "Building uses...";
+    UseBuilder usebuilder(&editor);
+    usebuilder.setEditor(&editor);
     usebuilder.buildUses(ast);
-    qCDebug(KDEV_JULIA) << "Uses built successfully";
+    qCDebug(KDEV_JULIA) << "Uses built";
 
     // Start the code highlighter
     auto* bgParser = KDevelop::ICore::self()->languageController()->backgroundParser();

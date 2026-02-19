@@ -16,6 +16,8 @@
 
 #include "../parser/ast.h"
 #include "../types/types.h"
+#include "expressionvisitor.h"
+#include "juliaeditorintegrator.h"
 #include "juliadebug.h"
 #include "kdevjuliaversion.h"
 
@@ -82,247 +84,279 @@ bool isBuiltInModule(const QString& name)
 
 }
 
-DeclarationBuilder::DeclarationBuilder() = default;
+DeclarationBuilder::DeclarationBuilder(JuliaEditorIntegrator* editor)
+    : m_editor(editor)
+{
+}
 
 DeclarationBuilder::~DeclarationBuilder() = default;
 
-void DeclarationBuilder::startVisiting(AstNode* node)
+// ============================================================================
+// Virtual dispatch methods for declaration creation (Python-style)
+// ============================================================================
+
+void DeclarationBuilder::visitFunction(AstNode* node)
 {
     if (!node) {
         return;
     }
+    qCDebug(KDEV_JULIA) << ">>> DeclarationBuilder::visitFunction";
 
-    switch (node->kind()) {
-        case NodeKind::TopLevel:
-        case NodeKind::Block: {
-            DeclarationBuilderBase::startVisiting(node);
-            break;
+    FunctionNode* funcNode = dynamic_cast<FunctionNode*>(node);
+    if (!funcNode) {
+        return;
+    }
+    
+    QString name = funcNode->functionName();
+    
+    if (!name.isEmpty()) {
+        AstNode* nameNode = funcNode->firstChild();
+        if (nameNode && nameNode->kind() == NodeKind::Call) {
+            nameNode = nameNode->firstChild();
         }
-        case NodeKind::Function: {
-            FunctionNode* funcNode = dynamic_cast<FunctionNode*>(node);
-            if (!funcNode) {
-                DeclarationBuilderBase::startVisiting(node);
-                break;
-            }
+        
+        auto* decl = openDeclaration<KDevelop::FunctionDeclaration>(nameNode, node);
+        if (decl) {
+            decl->setKind(KDevelop::Declaration::Type);
+            decl->setInSymbolTable(false);
             
-            QString name = funcNode->functionName();
+            // Create FunctionType
+            KDevelop::FunctionType::Ptr funcType(new KDevelop::FunctionType());
             
-            if (!name.isEmpty()) {
-                AstNode* nameNode = funcNode->firstChild();
-                if (nameNode && nameNode->kind() == NodeKind::Call) {
-                    nameNode = nameNode->firstChild();
-                }
-                
-                auto* decl = openDeclaration<KDevelop::FunctionDeclaration>(nameNode, node);
-                if (decl) {
-                    decl->setKind(KDevelop::Declaration::Type);
-                    decl->setInSymbolTable(false);
-                    
-                    // Create FunctionType
-                    KDevelop::FunctionType::Ptr funcType(new KDevelop::FunctionType());
-                    
-                    // Add parameter types using the new parameters() method
-                    QList<AstNode*> params = funcNode->parameters();
-                    for (AstNode* param : params) {
-                        if (!param) continue;
-                        
-                        // param is a TypeAnnotation node: a::Int
-                        // first child is the parameter name, last child is the type
-                        AstNode* paramTypeNode = param->lastChild();
-                        if (paramTypeNode) {
-                            KDevelop::AbstractType* paramType = TypeMapper::typeFromAstNode(paramTypeNode);
-                            if (paramType) {
-                                funcType->addArgument(KDevelop::AbstractType::Ptr(paramType));
-                            } else {
-                                auto* mixedType = new KDevelop::IntegralType(KDevelop::IntegralType::TypeMixed);
-                                funcType->addArgument(KDevelop::AbstractType::Ptr(mixedType));
-                            }
-                        }
-                    }
-                    
-                    // Add return type
-                    if (funcNode->hasReturnType()) {
-                        AstNode* retTypeNode = funcNode->returnType();
-                        if (retTypeNode) {
-                            KDevelop::AbstractType* retType = TypeMapper::typeFromAstNode(retTypeNode);
-                            if (retType) {
-                                funcType->setReturnType(KDevelop::AbstractType::Ptr(retType));
-                            }
-                        }
-                    }
-                    
-                    decl->setType(funcType);
-                    closeDeclaration();
-                }
-            }
-            
-            // Create declarations for type parameters (from where clause)
-            QList<AstNode*> typeParams = funcNode->typeParameters();
-            for (AstNode* typeParam : typeParams) {
-                if (!typeParam || typeParam->kind() != NodeKind::Identifier) continue;
-                
-                QString typeParamName = typeParam->text();
-                if (!typeParamName.isEmpty()) {
-                    auto* tpDecl = openDeclaration<KDevelop::Declaration>(typeParam, typeParam);
-                    if (tpDecl) {
-                        tpDecl->setKind(KDevelop::Declaration::Type);
-                        auto* structType = new KDevelop::StructureType();
-                        tpDecl->setType(KDevelop::AbstractType::Ptr(structType));
-                        closeDeclaration();
-                    }
-                }
-            }
-            
-            DeclarationBuilderBase::startVisiting(node);
-            
-            // Now create parameter declarations - the Function context has been created by startVisiting
+            // Add parameter types
             QList<AstNode*> params = funcNode->parameters();
             for (AstNode* param : params) {
-                if (!param || param->kind() != NodeKind::TypeAnnotation) continue;
+                if (!param) continue;
                 
-                AstNode* paramNameNode = param->firstChild();
                 AstNode* paramTypeNode = param->lastChild();
-                if (!paramNameNode || paramNameNode->kind() != NodeKind::Identifier) continue;
+                if (paramTypeNode) {
+                    KDevelop::AbstractType* paramType = TypeMapper::typeFromAstNode(paramTypeNode);
+                    if (paramType) {
+                        funcType->addArgument(KDevelop::AbstractType::Ptr(paramType));
+                    } else {
+                        auto* mixedType = new KDevelop::IntegralType(KDevelop::IntegralType::TypeMixed);
+                        funcType->addArgument(KDevelop::AbstractType::Ptr(mixedType));
+                    }
+                }
+            }
+            
+            // Add return type
+            if (funcNode->hasReturnType()) {
+                AstNode* retTypeNode = funcNode->returnType();
+                if (retTypeNode) {
+                    KDevelop::AbstractType* retType = TypeMapper::typeFromAstNode(retTypeNode);
+                    if (retType) {
+                        funcType->setReturnType(KDevelop::AbstractType::Ptr(retType));
+                    }
+                }
+            }
+            
+            decl->setType(funcType);
+            closeDeclaration();
+        }
+    }
+    
+    // Create declarations for type parameters (from where clause)
+    QList<AstNode*> typeParams = funcNode->typeParameters();
+    for (AstNode* typeParam : typeParams) {
+        if (!typeParam || typeParam->kind() != NodeKind::Identifier) continue;
+        
+        QString typeParamName = typeParam->text();
+        if (!typeParamName.isEmpty()) {
+            auto* tpDecl = openDeclaration<KDevelop::Declaration>(typeParam, typeParam);
+            if (tpDecl) {
+                tpDecl->setKind(KDevelop::Declaration::Type);
+                auto* structType = new KDevelop::StructureType();
+                tpDecl->setType(KDevelop::AbstractType::Ptr(structType));
+                closeDeclaration();
+            }
+        }
+    }
+    
+    // Traversal is handled by ContextBuilder, not DeclarationBuilder
+    qCDebug(KDEV_JULIA) << "<<< DeclarationBuilder::visitFunction DONE";
+}
+
+void DeclarationBuilder::visitStruct(AstNode* node)
+{
+    if (!node) {
+        return;
+    }
+    qCDebug(KDEV_JULIA) << ">>> DeclarationBuilder::visitStruct";
+
+    AstNode* nameNode = node->firstChild();
+    
+    // Handle parametric struct: struct Foo{T} ... 
+    if (nameNode && nameNode->kind() == NodeKind::Curly) {
+        if (CurlyNode* curly = dynamic_cast<CurlyNode*>(nameNode)) {
+            nameNode = curly->firstChild();
+        }
+    }
+    
+    if (nameNode && nameNode->kind() == NodeKind::Identifier) {
+        QString name = nameNode->text();
+        if (!name.isEmpty()) {
+            auto* decl = openDeclaration<KDevelop::Declaration>(nameNode, node);
+            if (decl) {
+                decl->setKind(KDevelop::Declaration::Type);
+                auto* structType = new KDevelop::StructureType();
+                structType->setDeclaration(decl);
+                decl->setType(KDevelop::AbstractType::Ptr(structType));
+                qCDebug(KDEV_JULIA) << "Struct declaration created:" << name;
+                closeDeclaration();
+            }
+        }
+    }
+    
+    // Traversal is handled by ContextBuilder
+    qCDebug(KDEV_JULIA) << "<<< DeclarationBuilder::visitStruct DONE";
+}
+
+void DeclarationBuilder::visitModule(AstNode* node)
+{
+    if (!node) {
+        return;
+    }
+    qCDebug(KDEV_JULIA) << ">>> DeclarationBuilder::visitModule";
+
+    AstNode* nameNode = node->firstChild();
+    if (nameNode && nameNode->kind() == NodeKind::Identifier) {
+        QString name = nameNode->text();
+        if (!name.isEmpty()) {
+            auto* decl = openDeclaration<KDevelop::Declaration>(nameNode, node);
+            if (decl) {
+                decl->setKind(KDevelop::Declaration::Type);
+                auto* structType = new KDevelop::StructureType();
+                structType->setDeclaration(decl);
+                decl->setType(KDevelop::AbstractType::Ptr(structType));
+                qCDebug(KDEV_JULIA) << "Module declaration created:" << name;
+                closeDeclaration();
+            }
+        }
+    }
+    
+    // Traversal is handled by ContextBuilder
+    qCDebug(KDEV_JULIA) << "<<< DeclarationBuilder::visitModule DONE";
+}
+
+void DeclarationBuilder::visitAbstract(AstNode* node)
+{
+    if (!node) {
+        return;
+    }
+    qCDebug(KDEV_JULIA) << ">>> DeclarationBuilder::visitAbstract";
+
+    AstNode* nameNode = node->firstChild();
+    if (nameNode && nameNode->kind() == NodeKind::Identifier) {
+        QString name = nameNode->text();
+        if (!name.isEmpty()) {
+            auto* decl = openDeclaration<KDevelop::Declaration>(nameNode, node);
+            if (decl) {
+                decl->setKind(KDevelop::Declaration::Type);
+                auto* structType = new KDevelop::StructureType();
+                decl->setType(KDevelop::AbstractType::Ptr(structType));
+                qCDebug(KDEV_JULIA) << "Abstract type declaration created:" << name;
+                closeDeclaration();
+            }
+        }
+    }
+    
+    // Traversal is handled by ContextBuilder
+    qCDebug(KDEV_JULIA) << "<<< DeclarationBuilder::visitAbstract DONE";
+}
+
+void DeclarationBuilder::visitPrimitive(AstNode* node)
+{
+    if (!node) {
+        return;
+    }
+    qCDebug(KDEV_JULIA) << ">>> DeclarationBuilder::visitPrimitive";
+
+    AstNode* nameNode = node->firstChild();
+    if (nameNode && nameNode->kind() == NodeKind::Identifier) {
+        QString name = nameNode->text();
+        if (!name.isEmpty()) {
+            auto* decl = openDeclaration<KDevelop::Declaration>(nameNode, node);
+            if (decl) {
+                decl->setKind(KDevelop::Declaration::Type);
+                auto* structType = new KDevelop::StructureType();
+                decl->setType(KDevelop::AbstractType::Ptr(structType));
+                qCDebug(KDEV_JULIA) << "Primitive type declaration created:" << name;
+                closeDeclaration();
+            }
+        }
+    }
+    
+    // Traversal is handled by ContextBuilder
+    qCDebug(KDEV_JULIA) << "<<< DeclarationBuilder::visitPrimitive DONE";
+}
+
+void DeclarationBuilder::visitUsing(AstNode* node)
+{
+    if (!node) {
+        return;
+    }
+    qCDebug(KDEV_JULIA) << ">>> DeclarationBuilder::visitUsing";
+
+    for (AstNode* child : node->children()) {
+        if (!child) continue;
+        
+        if (child->kind() == NodeKind::Identifier) {
+            QString moduleName = child->text().trimmed();
+            if (!moduleName.isEmpty()) {
+                if (!isBuiltInModule(moduleName)) {
+                    QString modulePath = findJuliaModule(moduleName);
+                    if (modulePath.isEmpty()) {
+                        reportProblem(topContext(), child->range(), 
+                            QStringLiteral("Module \"%1\" not found").arg(moduleName),
+                            KDevelop::IProblem::Warning);
+                    } else {
+                        qCDebug(KDEV_JULIA) << "Found Julia module:" << moduleName << "at" << modulePath;
+                    }
+                }
                 
-                QString paramName = paramNameNode->text();
-                auto* paramDecl = openDeclaration<KDevelop::Declaration>(paramNameNode, param);
-                if (paramDecl) {
-                    paramDecl->setKind(KDevelop::Declaration::Instance);
-                    
-                    if (paramTypeNode) {
-                        KDevelop::AbstractType* paramType = TypeMapper::typeFromAstNode(paramTypeNode);
-                        if (paramType) {
-                            paramDecl->setType(KDevelop::AbstractType::Ptr(paramType));
-                        } else {
-                            auto* mixedType = new KDevelop::IntegralType(KDevelop::IntegralType::TypeMixed);
-                            paramDecl->setType(KDevelop::AbstractType::Ptr(mixedType));
-                        }
-                    }
-                    qCDebug(KDEV_JULIA) << "Parameter declaration created:" << paramName << "range:" << paramDecl->range() << "context:" << currentContext();
-                    closeDeclaration();
-                }
-            }
-            break;
-        }
-        case NodeKind::Struct: {
-            qCDebug(KDEV_JULIA) << "Visiting struct, creating declaration";
-            
-            AstNode* nameNode = node->firstChild();
-            
-            // Handle parametric struct: struct Foo{T} ... 
-            // First child is Curly node, not Identifier
-            if (nameNode && nameNode->kind() == NodeKind::Curly) {
-                // Get the actual name from the curly node
-                if (CurlyNode* curly = dynamic_cast<CurlyNode*>(nameNode)) {
-                    nameNode = curly->firstChild();
-                }
-            }
-            
-            if (nameNode && nameNode->kind() == NodeKind::Identifier) {
-                QString name = nameNode->text();
-                if (!name.isEmpty()) {
-                    auto* decl = openDeclaration<KDevelop::Declaration>(nameNode, node);
-                    if (decl) {
-                        decl->setKind(KDevelop::Declaration::Type);
-                        auto* structType = new KDevelop::StructureType();
-                        structType->setDeclaration(decl);
-                        decl->setType(KDevelop::AbstractType::Ptr(structType));
-                        qCDebug(KDEV_JULIA) << "Struct declaration created:" << name;
-                        closeDeclaration();
-                    }
-                }
-            }
-            
-            DeclarationBuilderBase::startVisiting(node);
-            break;
-        }
-        case NodeKind::Module: {
-            qCDebug(KDEV_JULIA) << "Visiting module";
-            
-            AstNode* nameNode = node->firstChild();
-            if (nameNode && nameNode->kind() == NodeKind::Identifier) {
-                QString name = nameNode->text();
-                if (!name.isEmpty()) {
-                    auto* decl = openDeclaration<KDevelop::Declaration>(nameNode, node);
-                    if (decl) {
-                        decl->setKind(KDevelop::Declaration::Type);
-                        auto* structType = new KDevelop::StructureType();
-                        structType->setDeclaration(decl);
-                        decl->setType(KDevelop::AbstractType::Ptr(structType));
-                        qCDebug(KDEV_JULIA) << "Module declaration created:" << name;
-                        closeDeclaration();
-                    }
-                }
-            }
-            
-            DeclarationBuilderBase::startVisiting(node);
-            break;
-        }
-        case NodeKind::Equals: {
-            AstNode* lhs = node->firstChild();
-            
-            if (!lhs) {
-                DeclarationBuilderBase::startVisiting(node);
-                break;
-            }
-            
-            QString varName;
-            QString typeName;
-            AstNode* varNode = nullptr;
-            
-            if (lhs->kind() == NodeKind::Identifier) {
-                varName = lhs->text();
-                varNode = lhs;
-            } else if (lhs->kind() == NodeKind::TypeAnnotation) {
-                AstNode* nameNode = lhs->firstChild();
-                AstNode* typeNode = lhs->lastChild();
-                if (nameNode && nameNode->kind() == NodeKind::Identifier) {
-                    varName = nameNode->text();
-                    varNode = nameNode;
-                }
-                if (typeNode) {
-                    typeName = typeNode->text();
-                }
-            }
-            
-            if (!varName.isEmpty() && varNode) {
-                auto* decl = openDeclaration<KDevelop::Declaration>(varNode, varNode);
+                auto* decl = openDeclaration<KDevelop::Declaration>(child, node);
                 if (decl) {
-                    decl->setKind(KDevelop::Declaration::Instance);
-                    
-                    KDevelop::AbstractType::Ptr typePtr;
-                    
-                    if (!typeName.isEmpty()) {
-                        typePtr = KDevelop::AbstractType::Ptr(TypeMapper::typeFromString(typeName, currentContext()));
-                    }
-                    
-                    if (!typePtr) {
-                        auto* intType = new KDevelop::IntegralType(KDevelop::IntegralType::TypeMixed);
-                        typePtr = KDevelop::AbstractType::Ptr(intType);
-                    }
-                    
-                    decl->setType(typePtr);
-                    qCDebug(KDEV_JULIA) << "Variable declaration created:" << varName << "type:" << typeName << "range:" << decl->range();
+                    decl->setKind(KDevelop::Declaration::Namespace);
+                    auto* structType = new KDevelop::StructureType();
+                    decl->setType(KDevelop::AbstractType::Ptr(structType));
+                    qCDebug(KDEV_JULIA) << "Using declaration created:" << moduleName;
                     closeDeclaration();
                 }
             }
-            
-            DeclarationBuilderBase::startVisiting(node);
-            break;
-        }
-        case NodeKind::Using: {
-            qCDebug(KDEV_JULIA) << "Visiting using statement";
-            
-            for (AstNode* child : node->children()) {
-                if (!child) continue;
+        } else if (child->kind() == NodeKind::Dot) {
+            QString modulePath = child->text().trimmed();
+            if (!modulePath.isEmpty()) {
+                QStringList parts = modulePath.split(QLatin1Char('.'));
+                if (!parts.isEmpty() && !isBuiltInModule(parts.first())) {
+                    QString modulePathResolved = findJuliaModule(parts.first());
+                    if (modulePathResolved.isEmpty()) {
+                        reportProblem(topContext(), child->range(), 
+                            QStringLiteral("Module \"%1\" not found").arg(parts.first()),
+                            KDevelop::IProblem::Warning);
+                    } else {
+                        qCDebug(KDEV_JULIA) << "Found Julia module:" << parts.first() << "at" << modulePathResolved;
+                    }
+                }
                 
-                if (child->kind() == NodeKind::Identifier) {
-                    QString moduleName = child->text().trimmed();
+                auto* decl = openDeclaration<KDevelop::Declaration>(child, node);
+                if (decl) {
+                    decl->setKind(KDevelop::Declaration::Namespace);
+                    auto* structType = new KDevelop::StructureType();
+                    decl->setType(KDevelop::AbstractType::Ptr(structType));
+                    qCDebug(KDEV_JULIA) << "Using path declaration created:" << modulePath;
+                    closeDeclaration();
+                }
+            }
+        } else {
+            for (AstNode* subchild : child->children()) {
+                if (subchild && subchild->kind() == NodeKind::Identifier) {
+                    QString moduleName = subchild->text().trimmed();
                     if (!moduleName.isEmpty()) {
                         if (!isBuiltInModule(moduleName)) {
                             QString modulePath = findJuliaModule(moduleName);
                             if (modulePath.isEmpty()) {
-                                reportProblem(topContext(), child->range(), 
+                                reportProblem(topContext(), subchild->range(), 
                                     QStringLiteral("Module \"%1\" not found").arg(moduleName),
                                     KDevelop::IProblem::Warning);
                             } else {
@@ -330,178 +364,142 @@ void DeclarationBuilder::startVisiting(AstNode* node)
                             }
                         }
                         
-                        auto* decl = openDeclaration<KDevelop::Declaration>(child, node);
+                        auto* decl = openDeclaration<KDevelop::Declaration>(subchild, node);
                         if (decl) {
                             decl->setKind(KDevelop::Declaration::Namespace);
                             auto* structType = new KDevelop::StructureType();
                             decl->setType(KDevelop::AbstractType::Ptr(structType));
-                            qCDebug(KDEV_JULIA) << "Using declaration created:" << moduleName;
-                            closeDeclaration();
-                        }
-                    }
-                } else if (child->kind() == NodeKind::Dot) {
-                    QString modulePath = child->text().trimmed();
-                    if (!modulePath.isEmpty()) {
-                        QStringList parts = modulePath.split(QLatin1Char('.'));
-                        if (!parts.isEmpty() && !isBuiltInModule(parts.first())) {
-                            QString modulePathResolved = findJuliaModule(parts.first());
-                            if (modulePathResolved.isEmpty()) {
-                                reportProblem(topContext(), child->range(), 
-                                    QStringLiteral("Module \"%1\" not found").arg(parts.first()),
-                                    KDevelop::IProblem::Warning);
-                            } else {
-                                qCDebug(KDEV_JULIA) << "Found Julia module:" << parts.first() << "at" << modulePathResolved;
-                            }
-                        }
-                        
-                        auto* decl = openDeclaration<KDevelop::Declaration>(child, node);
-                        if (decl) {
-                            decl->setKind(KDevelop::Declaration::Namespace);
-                            auto* structType = new KDevelop::StructureType();
-                            decl->setType(KDevelop::AbstractType::Ptr(structType));
-                            qCDebug(KDEV_JULIA) << "Using path declaration created:" << modulePath;
-                            closeDeclaration();
-                        }
-                    }
-                } else {
-                    for (AstNode* subchild : child->children()) {
-                        if (subchild && subchild->kind() == NodeKind::Identifier) {
-                            QString moduleName = subchild->text().trimmed();
-                            if (!moduleName.isEmpty()) {
-                                if (!isBuiltInModule(moduleName)) {
-                                    QString modulePath = findJuliaModule(moduleName);
-                                    if (modulePath.isEmpty()) {
-                                        reportProblem(topContext(), subchild->range(), 
-                                            QStringLiteral("Module \"%1\" not found").arg(moduleName),
-                                            KDevelop::IProblem::Warning);
-                                    } else {
-                                        qCDebug(KDEV_JULIA) << "Found Julia module:" << moduleName << "at" << modulePath;
-                                    }
-                                }
-                                
-                                auto* decl = openDeclaration<KDevelop::Declaration>(subchild, node);
-                                if (decl) {
-                                    decl->setKind(KDevelop::Declaration::Namespace);
-                                    auto* structType = new KDevelop::StructureType();
-                                    decl->setType(KDevelop::AbstractType::Ptr(structType));
-                                    qCDebug(KDEV_JULIA) << "Using (nested) declaration created:" << moduleName;
-                                    closeDeclaration();
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            
-            DeclarationBuilderBase::startVisiting(node);
-            break;
-        }
-        case NodeKind::Import: {
-            qCDebug(KDEV_JULIA) << "Visiting import statement";
-            
-            for (AstNode* child : node->children()) {
-                if (!child) continue;
-                
-                if (child->kind() == NodeKind::Identifier) {
-                    QString name = child->text().trimmed();
-                    if (!name.isEmpty()) {
-                        if (!isBuiltInModule(name)) {
-                            QString modulePath = findJuliaModule(name);
-                            if (modulePath.isEmpty()) {
-                                reportProblem(topContext(), child->range(), 
-                                    QStringLiteral("Module \"%1\" not found").arg(name),
-                                    KDevelop::IProblem::Warning);
-                            } else {
-                                qCDebug(KDEV_JULIA) << "Found Julia module:" << name << "at" << modulePath;
-                            }
-                        }
-                        
-                        auto* decl = openDeclaration<KDevelop::Declaration>(child, node);
-                        if (decl) {
-                            decl->setKind(KDevelop::Declaration::Instance);
-                            auto* structType = new KDevelop::StructureType();
-                            decl->setType(KDevelop::AbstractType::Ptr(structType));
-                            qCDebug(KDEV_JULIA) << "Import declaration created:" << name;
-                            closeDeclaration();
-                        }
-                    }
-                } else if (child->kind() == NodeKind::Dot) {
-                    QString path = child->text().trimmed();
-                    if (!path.isEmpty()) {
-                        QStringList parts = path.split(QLatin1Char('.'));
-                        if (!parts.isEmpty() && !isBuiltInModule(parts.first())) {
-                            QString modulePathResolved = findJuliaModule(parts.first());
-                            if (modulePathResolved.isEmpty()) {
-                                reportProblem(topContext(), child->range(), 
-                                    QStringLiteral("Module \"%1\" not found").arg(parts.first()),
-                                    KDevelop::IProblem::Warning);
-                            } else {
-                                qCDebug(KDEV_JULIA) << "Found Julia module:" << parts.first() << "at" << modulePathResolved;
-                            }
-                        }
-                        
-                        auto* decl = openDeclaration<KDevelop::Declaration>(child, node);
-                        if (decl) {
-                            decl->setKind(KDevelop::Declaration::Namespace);
-                            auto* structType = new KDevelop::StructureType();
-                            decl->setType(KDevelop::AbstractType::Ptr(structType));
-                            qCDebug(KDEV_JULIA) << "Import path declaration created:" << path;
-                            closeDeclaration();
-                        }
-                    }
-                } else if (child->kind() == NodeKind::Colon) {
-                    for (AstNode* importPath : child->children()) {
-                        if (!importPath) continue;
-                        QString pathText = importPath->text().trimmed();
-                        if (pathText.isEmpty()) continue;
-                        
-                        auto* decl = openDeclaration<KDevelop::Declaration>(importPath, node);
-                        if (decl) {
-                            decl->setKind(KDevelop::Declaration::Instance);
-                            auto* structType = new KDevelop::StructureType();
-                            decl->setType(KDevelop::AbstractType::Ptr(structType));
-                            qCDebug(KDEV_JULIA) << "Import from declaration created:" << pathText;
+                            qCDebug(KDEV_JULIA) << "Using (nested) declaration created:" << moduleName;
                             closeDeclaration();
                         }
                     }
                 }
             }
-            
-            DeclarationBuilderBase::startVisiting(node);
-            break;
         }
-        case NodeKind::Export: {
-            qCDebug(KDEV_JULIA) << "Visiting export statement";
-            
-            for (AstNode* child : node->children()) {
-                if (!child || child->kind() != NodeKind::Identifier) continue;
-                
-                QString name = child->text().trimmed();
-                if (!name.isEmpty()) {
-                    auto* decl = openDeclaration<KDevelop::Declaration>(child, node);
-                    if (decl) {
-                        decl->setKind(KDevelop::Declaration::Type);
-                        auto* structType = new KDevelop::StructureType();
-                        decl->setType(KDevelop::AbstractType::Ptr(structType));
-                        qCDebug(KDEV_JULIA) << "Export declaration created:" << name;
-                        closeDeclaration();
-                    }
-                }
-            }
-            
-            DeclarationBuilderBase::startVisiting(node);
-            break;
-        }
-        default:
-            DeclarationBuilderBase::startVisiting(node);
-            break;
     }
+    
+    // Traversal is handled by ContextBuilder
+    qCDebug(KDEV_JULIA) << "<<< DeclarationBuilder::visitUsing DONE";
 }
+
+void DeclarationBuilder::visitImport(AstNode* node)
+{
+    if (!node) {
+        return;
+    }
+    qCDebug(KDEV_JULIA) << ">>> DeclarationBuilder::visitImport";
+
+    for (AstNode* child : node->children()) {
+        if (!child) continue;
+        
+        if (child->kind() == NodeKind::Identifier) {
+            QString name = child->text().trimmed();
+            if (!name.isEmpty()) {
+                if (!isBuiltInModule(name)) {
+                    QString modulePath = findJuliaModule(name);
+                    if (modulePath.isEmpty()) {
+                        reportProblem(topContext(), child->range(), 
+                            QStringLiteral("Module \"%1\" not found").arg(name),
+                            KDevelop::IProblem::Warning);
+                    } else {
+                        qCDebug(KDEV_JULIA) << "Found Julia module:" << name << "at" << modulePath;
+                    }
+                }
+                
+                auto* decl = openDeclaration<KDevelop::Declaration>(child, node);
+                if (decl) {
+                    decl->setKind(KDevelop::Declaration::Instance);
+                    auto* structType = new KDevelop::StructureType();
+                    decl->setType(KDevelop::AbstractType::Ptr(structType));
+                    qCDebug(KDEV_JULIA) << "Import declaration created:" << name;
+                    closeDeclaration();
+                }
+            }
+        } else if (child->kind() == NodeKind::Dot) {
+            QString path = child->text().trimmed();
+            if (!path.isEmpty()) {
+                QStringList parts = path.split(QLatin1Char('.'));
+                if (!parts.isEmpty() && !isBuiltInModule(parts.first())) {
+                    QString modulePathResolved = findJuliaModule(parts.first());
+                    if (modulePathResolved.isEmpty()) {
+                        reportProblem(topContext(), child->range(), 
+                            QStringLiteral("Module \"%1\" not found").arg(parts.first()),
+                            KDevelop::IProblem::Warning);
+                    } else {
+                        qCDebug(KDEV_JULIA) << "Found Julia module:" << parts.first() << "at" << modulePathResolved;
+                    }
+                }
+                
+                auto* decl = openDeclaration<KDevelop::Declaration>(child, node);
+                if (decl) {
+                    decl->setKind(KDevelop::Declaration::Namespace);
+                    auto* structType = new KDevelop::StructureType();
+                    decl->setType(KDevelop::AbstractType::Ptr(structType));
+                    qCDebug(KDEV_JULIA) << "Import path declaration created:" << path;
+                    closeDeclaration();
+                }
+            }
+        } else if (child->kind() == NodeKind::Colon) {
+            for (AstNode* importPath : child->children()) {
+                if (!importPath) continue;
+                QString pathText = importPath->text().trimmed();
+                if (pathText.isEmpty()) continue;
+                
+                auto* decl = openDeclaration<KDevelop::Declaration>(importPath, node);
+                if (decl) {
+                    decl->setKind(KDevelop::Declaration::Instance);
+                    auto* structType = new KDevelop::StructureType();
+                    decl->setType(KDevelop::AbstractType::Ptr(structType));
+                    qCDebug(KDEV_JULIA) << "Import from declaration created:" << pathText;
+                    closeDeclaration();
+                }
+            }
+        }
+    }
+    
+    // Traversal is handled by ContextBuilder
+    qCDebug(KDEV_JULIA) << "<<< DeclarationBuilder::visitImport DONE";
+}
+
+void DeclarationBuilder::visitExport(AstNode* node)
+{
+    if (!node) {
+        return;
+    }
+    qCDebug(KDEV_JULIA) << ">>> DeclarationBuilder::visitExport";
+
+    for (AstNode* child : node->children()) {
+        if (!child || child->kind() != NodeKind::Identifier) continue;
+        
+        QString name = child->text().trimmed();
+        if (!name.isEmpty()) {
+            auto* decl = openDeclaration<KDevelop::Declaration>(child, node);
+            if (decl) {
+                decl->setKind(KDevelop::Declaration::Type);
+                auto* structType = new KDevelop::StructureType();
+                decl->setType(KDevelop::AbstractType::Ptr(structType));
+                qCDebug(KDEV_JULIA) << "Export declaration created:" << name;
+                closeDeclaration();
+            }
+        }
+    }
+    
+    // Traversal is handled by ContextBuilder
+    qCDebug(KDEV_JULIA) << "<<< DeclarationBuilder::visitExport DONE";
+}
+
+// ============================================================================
+// Required overrides
+// ============================================================================
 
 KDevelop::RangeInRevision DeclarationBuilder::editorFindRange(AstNode* fromNode, AstNode* toNode)
 {
     if (!fromNode || !toNode) {
         return KDevelop::RangeInRevision(0, 0, 0, 0);
+    }
+
+    if (m_editor) {
+        return m_editor->findRange(fromNode, toNode);
     }
 
     return fromNode->range();

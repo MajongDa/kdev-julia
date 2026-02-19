@@ -15,6 +15,7 @@ namespace KDevelop { class DUContext; }
 namespace Julia {
 
 class AstNode;
+class AstVisitor;
 
 enum class NodeKind {
     TopLevel,
@@ -106,6 +107,8 @@ public:
     bool isType() const;
     
     virtual QString dump(int indent = 0) const;
+    
+    void accept(AstVisitor* visitor);
     
     static AstNode* fromJson(const QJsonObject& json, AstNode* parent = nullptr);
     static AstNode* parseJson(const QByteArray& json);
