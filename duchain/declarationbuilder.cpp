@@ -95,22 +95,23 @@ DeclarationBuilder::~DeclarationBuilder() = default;
 // Virtual dispatch methods for declaration creation (Python-style)
 // ============================================================================
 
-void DeclarationBuilder::visitFunction(AstNode* node)
+void DeclarationBuilder::visitNode(AstNode* node)
+{
+    qCDebug(KDEV_JULIA) << "DeclarationBuilder::visitNode:" << (node ? nodeKindToString(node->kind()) : QStringLiteral("null"));
+    DeclarationBuilderBase::visitNode(node);
+}
+
+void DeclarationBuilder::visitFunction(FunctionNode* node)
 {
     if (!node) {
         return;
     }
     qCDebug(KDEV_JULIA) << ">>> DeclarationBuilder::visitFunction";
 
-    FunctionNode* funcNode = dynamic_cast<FunctionNode*>(node);
-    if (!funcNode) {
-        return;
-    }
-    
-    QString name = funcNode->functionName();
+    QString name = node->functionName();
     
     if (!name.isEmpty()) {
-        AstNode* nameNode = funcNode->firstChild();
+        AstNode* nameNode = node->firstChild();
         if (nameNode && nameNode->kind() == NodeKind::Call) {
             nameNode = nameNode->firstChild();
         }
@@ -124,7 +125,7 @@ void DeclarationBuilder::visitFunction(AstNode* node)
             KDevelop::FunctionType::Ptr funcType(new KDevelop::FunctionType());
             
             // Add parameter types
-            QList<AstNode*> params = funcNode->parameters();
+            QList<AstNode*> params = node->parameters();
             for (AstNode* param : params) {
                 if (!param) continue;
                 
@@ -141,8 +142,8 @@ void DeclarationBuilder::visitFunction(AstNode* node)
             }
             
             // Add return type
-            if (funcNode->hasReturnType()) {
-                AstNode* retTypeNode = funcNode->returnType();
+            if (node->hasReturnType()) {
+                AstNode* retTypeNode = node->returnType();
                 if (retTypeNode) {
                     KDevelop::AbstractType* retType = TypeMapper::typeFromAstNode(retTypeNode);
                     if (retType) {
@@ -157,7 +158,7 @@ void DeclarationBuilder::visitFunction(AstNode* node)
     }
     
     // Create declarations for type parameters (from where clause)
-    QList<AstNode*> typeParams = funcNode->typeParameters();
+    QList<AstNode*> typeParams = node->typeParameters();
     for (AstNode* typeParam : typeParams) {
         if (!typeParam || typeParam->kind() != NodeKind::Identifier) continue;
         
@@ -173,11 +174,13 @@ void DeclarationBuilder::visitFunction(AstNode* node)
         }
     }
     
-    // Traversal is handled by ContextBuilder, not DeclarationBuilder
+    // Continue traversal - this will also create function context via ContextBuilder
+    ContextBuilder::visitFunction(node);
+    
     qCDebug(KDEV_JULIA) << "<<< DeclarationBuilder::visitFunction DONE";
 }
 
-void DeclarationBuilder::visitStruct(AstNode* node)
+void DeclarationBuilder::visitStruct(StructNode* node)
 {
     if (!node) {
         return;
@@ -208,7 +211,9 @@ void DeclarationBuilder::visitStruct(AstNode* node)
         }
     }
     
-    // Traversal is handled by ContextBuilder
+    // Continue traversal - this will also create struct context via ContextBuilder
+    ContextBuilder::visitStruct(node);
+    
     qCDebug(KDEV_JULIA) << "<<< DeclarationBuilder::visitStruct DONE";
 }
 
@@ -235,7 +240,9 @@ void DeclarationBuilder::visitModule(AstNode* node)
         }
     }
     
-    // Traversal is handled by ContextBuilder
+    // Continue traversal - this will also create module context via ContextBuilder
+    ContextBuilder::visitModule(node);
+    
     qCDebug(KDEV_JULIA) << "<<< DeclarationBuilder::visitModule DONE";
 }
 

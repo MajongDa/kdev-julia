@@ -13,10 +13,10 @@ public:
     
     virtual void visitNode(AstNode* node);
     
-    // Container nodes
+    // Container nodes - using specific types (Python-style)
     virtual void visitTopLevel(AstNode* node) {}
-    virtual void visitFunction(AstNode* node) {}
-    virtual void visitStruct(AstNode* node) {}
+    virtual void visitFunction(FunctionNode* node) {}
+    virtual void visitStruct(StructNode* node) {}
     virtual void visitModule(AstNode* node) {}
     virtual void visitBlock(AstNode* node) {}
     
@@ -30,12 +30,12 @@ public:
     virtual void visitBreak(AstNode* node) {}
     virtual void visitContinue(AstNode* node) {}
     
-    // Expressions
+    // Expressions - using specific types where available
     virtual void visitIdentifier(AstNode* node) {}
-    virtual void visitCall(AstNode* node) {}
+    virtual void visitCall(CallNode* node) {}
     virtual void visitOperator(AstNode* node) {}
     virtual void visitTypeAnnotation(AstNode* node) {}
-    virtual void visitCurly(AstNode* node) {}
+    virtual void visitCurly(CurlyNode* node) {}
     virtual void visitWhere(AstNode* node) {}
     virtual void visitParameters(AstNode* node) {}
     virtual void visitString(AstNode* node) {}

@@ -14,8 +14,8 @@ public:
     // Container nodes - define scopes
     void visitTopLevel(AstNode* node) override;
     void visitBlock(AstNode* node) override;
-    void visitFunction(AstNode* node) override;
-    void visitStruct(AstNode* node) override;
+    void visitFunction(FunctionNode* node) override;
+    void visitStruct(StructNode* node) override;
     void visitModule(AstNode* node) override;
     void visitAbstract(AstNode* node) override;
     void visitPrimitive(AstNode* node) override;
@@ -30,8 +30,8 @@ public:
     void visitTry(AstNode* node) override;
 
     // Expressions
-    void visitCall(AstNode* node) override;
-    void visitCurly(AstNode* node) override;
+    void visitCall(CallNode* node) override;
+    void visitCurly(CurlyNode* node) override;
     void visitWhere(AstNode* node) override;
     void visitTypeAnnotation(AstNode* node) override;
     void visitParameters(AstNode* node) override;

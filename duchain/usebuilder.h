@@ -24,7 +24,7 @@ protected:
     KDevelop::QualifiedIdentifier identifierForNode(AstNode* node) override;
 
     void visitIdentifier(AstNode* node) override;
-    void visitCall(AstNode* node) override;
+    void visitCall(CallNode* node) override;
     void visitDot(AstNode* node) override;
 
 private:

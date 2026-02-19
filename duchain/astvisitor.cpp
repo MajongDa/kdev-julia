@@ -31,10 +31,10 @@ void AstVisitor::visitNode(AstNode* node)
             visitBlock(node);
             break;
         case NodeKind::Function:
-            visitFunction(node);
+            visitFunction(static_cast<FunctionNode*>(node));
             break;
         case NodeKind::Struct:
-            visitStruct(node);
+            visitStruct(static_cast<StructNode*>(node));
             break;
         case NodeKind::Module:
             visitModule(node);
@@ -70,7 +70,7 @@ void AstVisitor::visitNode(AstNode* node)
             visitContinue(node);
             break;
         case NodeKind::Call:
-            visitCall(node);
+            visitCall(static_cast<CallNode*>(node));
             break;
         case NodeKind::Identifier:
             visitIdentifier(node);
@@ -79,7 +79,7 @@ void AstVisitor::visitNode(AstNode* node)
             visitTypeAnnotation(node);
             break;
         case NodeKind::Curly:
-            visitCurly(node);
+            visitCurly(static_cast<CurlyNode*>(node));
             break;
         case NodeKind::Where:
             visitWhere(node);

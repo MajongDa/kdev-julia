@@ -27,6 +27,7 @@ void UseBuilder::visitIdentifier(AstNode* node)
     }
 
     qCDebug(KDEV_JULIA) << ">>> UseBuilder::visitIdentifier:" << node->text() << "range:" << node->range();
+    qCDebug(KDEV_JULIA) << "  currentContext:" << currentContext();
 
     if (AstNode* parent = node->parent()) {
         if (parent->kind() == NodeKind::Function ||
@@ -40,8 +41,26 @@ void UseBuilder::visitIdentifier(AstNode* node)
         }
     }
     
-    ExpressionVisitor v(currentContext());
-    v.visitNode(node);
+    // Find context at identifier position from the built DUChain (Python-style)
+    KDevelop::DUContext* ctx = nullptr;
+    {
+        KDevelop::DUChainReadLocker lock(KDevelop::DUChain::lock());
+        ctx = topContext()->findContextAt(node->range().start, true);
+    }
+    if (!ctx) {
+        ctx = currentContext();  // fallback
+    }
+    
+    if (!ctx) {
+        qCDebug(KDEV_JULIA) << "  ERROR: No context available, skipping";
+        return;
+    }
+    
+    qCDebug(KDEV_JULIA) << "  Using context:" << ctx << "for identifier";
+    
+    // Use ExpressionVisitor ONLY for type inference, don't visit children (causes recursion!)
+    ExpressionVisitor v(ctx);
+    v.visitIdentifier(node);  // Only visit this specific node, not children
     
     auto type = v.lastType();
     if (type) {
@@ -67,7 +86,7 @@ void UseBuilder::visitIdentifier(AstNode* node)
     qCDebug(KDEV_JULIA) << "<<< UseBuilder::visitIdentifier DONE";
 }
 
-void UseBuilder::visitCall(AstNode* node)
+void UseBuilder::visitCall(CallNode* node)
 {
     if (!node) {
         return;
@@ -78,8 +97,17 @@ void UseBuilder::visitCall(AstNode* node)
     // Call base class first to properly set up context
     UseBuilderBase::visitCall(node);
 
-    KDevelop::DUContext* ctx = currentContext();
-    qCDebug(KDEV_JULIA) << "  UseBuilder::visitCall currentContext:" << ctx;
+    // Find context at call position from the built DUChain (Python-style)
+    KDevelop::DUContext* ctx = nullptr;
+    {
+        KDevelop::DUChainReadLocker lock(KDevelop::DUChain::lock());
+        ctx = topContext()->findContextAt(node->range().start, true);
+    }
+    if (!ctx) {
+        ctx = currentContext();  // fallback
+    }
+    
+    qCDebug(KDEV_JULIA) << "  UseBuilder::visitCall context:" << ctx;
     
     if (!ctx) {
         qCDebug(KDEV_JULIA) << "  No context, skipping ExpressionVisitor";
@@ -126,7 +154,21 @@ void UseBuilder::visitDot(AstNode* node)
         return;
     }
 
-    ExpressionVisitor v(currentContext());
+    // Find context at dot position from the built DUChain (Python-style)
+    KDevelop::DUContext* ctx = nullptr;
+    {
+        KDevelop::DUChainReadLocker lock(KDevelop::DUChain::lock());
+        ctx = topContext()->findContextAt(node->range().start, true);
+    }
+    if (!ctx) {
+        ctx = currentContext();  // fallback
+    }
+    
+    if (!ctx) {
+        return;
+    }
+
+    ExpressionVisitor v(ctx);
     v.visitNode(node);
 
     KDevelop::DeclarationPointer decl = v.lastDeclaration();

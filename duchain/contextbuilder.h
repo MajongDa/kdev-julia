@@ -40,8 +40,8 @@ protected:
 
     // Container nodes - override to handle specially
     void visitTopLevel(AstNode* node) override;
-    void visitFunction(AstNode* node) override;
-    void visitStruct(AstNode* node) override;
+    void visitFunction(FunctionNode* node) override;
+    void visitStruct(StructNode* node) override;
     void visitModule(AstNode* node) override;
     void visitBlock(AstNode* node) override;
 

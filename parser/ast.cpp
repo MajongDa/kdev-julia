@@ -286,8 +286,8 @@ void AstNode::accept(AstVisitor* visitor)
     switch (m_kind) {
         case NodeKind::TopLevel: visitor->visitTopLevel(this); break;
         case NodeKind::Block: visitor->visitBlock(this); break;
-        case NodeKind::Function: visitor->visitFunction(this); break;
-        case NodeKind::Struct: visitor->visitStruct(this); break;
+        case NodeKind::Function: visitor->visitFunction(static_cast<FunctionNode*>(this)); break;
+        case NodeKind::Struct: visitor->visitStruct(static_cast<StructNode*>(this)); break;
         case NodeKind::Module: visitor->visitModule(this); break;
         case NodeKind::Abstract: visitor->visitAbstract(this); break;
         case NodeKind::Primitive: visitor->visitPrimitive(this); break;
@@ -300,8 +300,8 @@ void AstNode::accept(AstVisitor* visitor)
         case NodeKind::For: visitor->visitFor(this); break;
         case NodeKind::Break: visitor->visitBreak(this); break;
         case NodeKind::Continue: visitor->visitContinue(this); break;
-        case NodeKind::Call: visitor->visitCall(this); break;
-        case NodeKind::Curly: visitor->visitCurly(this); break;
+        case NodeKind::Call: visitor->visitCall(static_cast<CallNode*>(this)); break;
+        case NodeKind::Curly: visitor->visitCurly(static_cast<CurlyNode*>(this)); break;
         case NodeKind::Where: visitor->visitWhere(this); break;
         case NodeKind::Parameters: visitor->visitParameters(this); break;
         case NodeKind::Identifier: visitor->visitIdentifier(this); break;

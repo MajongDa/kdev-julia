@@ -15,7 +15,7 @@ public:
     ExpressionVisitor(ExpressionVisitor* parent, const KDevelop::DUContext* overrideContext = nullptr);
 
     void visitIdentifier(AstNode* node) override;
-    void visitCall(AstNode* node) override;
+    void visitCall(CallNode* node) override;
     void visitOperator(AstNode* node) override;
     void visitString(AstNode* node) override;
     void visitFloat(AstNode* node) override;
@@ -26,7 +26,7 @@ public:
     void visitDict(AstNode* node) override;
     void visitTypeAnnotation(AstNode* node) override;
     void visitDot(AstNode* node) override;
-    void visitCurly(AstNode* node) override;
+    void visitCurly(CurlyNode* node) override;
     void visitBinaryOperation(AstNode* node);
     void visitUnaryOperation(AstNode* node);
 

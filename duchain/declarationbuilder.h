@@ -29,8 +29,9 @@ protected:
     KDevelop::QualifiedIdentifier identifierForNode(AstNode* node) override;
 
     // Declaration creation via virtual dispatch (Python-style)
-    void visitFunction(AstNode* node) override;
-    void visitStruct(AstNode* node) override;
+    void visitNode(AstNode* node) override;
+    void visitFunction(FunctionNode* node) override;
+    void visitStruct(StructNode* node) override;
     void visitModule(AstNode* node) override;
     void visitAbstract(AstNode* node) override;
     void visitPrimitive(AstNode* node) override;

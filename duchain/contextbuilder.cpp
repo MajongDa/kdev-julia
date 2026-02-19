@@ -64,29 +64,20 @@ void ContextBuilder::visitTopLevel(AstNode* node)
     qCDebug(KDEV_JULIA) << "<<< ContextBuilder::visitTopLevel DONE";
 }
 
-void ContextBuilder::visitFunction(AstNode* node)
+void ContextBuilder::visitFunction(FunctionNode* node)
 {
     if (!node) {
         return;
     }
     qCDebug(KDEV_JULIA) << ">>> ContextBuilder::visitFunction";
     
-    FunctionNode* funcNode = dynamic_cast<FunctionNode*>(node);
-    if (!funcNode) {
-        JuliaAstDefaultVisitor::visitFunction(node);
-        return;
-    }
-    
-    qCDebug(KDEV_JULIA) << "  Function name:" << funcNode->functionName() << "range:" << node->range();
+    qCDebug(KDEV_JULIA) << "  Function name:" << node->functionName() << "range:" << node->range();
     
     // Step 1: Parse parameters into parameter context
-    visitFunctionParameters(node, funcNode);
+    visitFunctionParameters(node, node);
     
     // Step 2: Parse body into body context (imports parameter context)
-    visitFunctionBody(node, funcNode);
-    
-    // Step 3: Continue traversal for remaining children (type parameters, etc.)
-    JuliaAstDefaultVisitor::visitFunction(node);
+    visitFunctionBody(node, node);
     
     qCDebug(KDEV_JULIA) << "<<< ContextBuilder::visitFunction DONE";
 }
@@ -215,7 +206,7 @@ KDevelop::RangeInRevision ContextBuilder::rangeForArgumentsContext(FunctionNode*
     return lastParam->range();
 }
 
-void ContextBuilder::visitStruct(AstNode* node)
+void ContextBuilder::visitStruct(StructNode* node)
 {
     if (!node) {
         return;

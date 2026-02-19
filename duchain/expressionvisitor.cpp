@@ -109,7 +109,7 @@ void ExpressionVisitor::visitIdentifier(AstNode* node)
     encounterUnknown();
 }
 
-void ExpressionVisitor::visitCall(AstNode* node)
+void ExpressionVisitor::visitCall(CallNode* node)
 {
     if (!node) {
         return;
@@ -402,7 +402,7 @@ void ExpressionVisitor::visitTypeAnnotation(AstNode* node)
         case NodeKind::Curly:
             // x::Array{Int} or x::Dict{String, Float64}
             // Delegate to visitCurly which handles parametric types
-            visitCurly(typeNode);
+            visitCurly(static_cast<CurlyNode*>(typeNode));
             break;
         
         case NodeKind::Dot:
@@ -459,7 +459,7 @@ void ExpressionVisitor::visitDot(AstNode* node)
     encounterUnknown();
 }
 
-void ExpressionVisitor::visitCurly(AstNode* node)
+void ExpressionVisitor::visitCurly(CurlyNode* node)
 {
     if (!node) {
         encounterUnknown();

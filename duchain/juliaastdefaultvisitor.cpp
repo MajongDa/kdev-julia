@@ -9,7 +9,12 @@ void JuliaAstDefaultVisitor::visitTopLevel(AstNode* node)
 {
     if (!node) return;
     qCDebug(KDEV_JULIA) << ">>> JuliaAstDefaultVisitor::visitTopLevel";
-    AstVisitor::visitNode(node);
+    // Visit children - NOT the node itself (that would cause infinite recursion)
+    for (AstNode* child : node->children()) {
+        if (child) {
+            AstVisitor::visitNode(child);
+        }
+    }
     qCDebug(KDEV_JULIA) << "<<< JuliaAstDefaultVisitor::visitTopLevel DONE";
 }
 
@@ -23,19 +28,14 @@ void JuliaAstDefaultVisitor::visitBlock(AstNode* node)
     }
 }
 
-void JuliaAstDefaultVisitor::visitFunction(AstNode* node)
+void JuliaAstDefaultVisitor::visitFunction(FunctionNode* node)
 {
     if (!node) return;
-    FunctionNode* funcNode = dynamic_cast<FunctionNode*>(node);
-    if (!funcNode) {
-        visitNode(node);
-        return;
-    }
-    visitNode(funcNode->arguments());
-    visitNode(funcNode->body());
+    visitNode(node->arguments());
+    visitNode(node->body());
 }
 
-void JuliaAstDefaultVisitor::visitStruct(AstNode* node)
+void JuliaAstDefaultVisitor::visitStruct(StructNode* node)
 {
     if (!node) return;
     for (AstNode* child : node->children()) {
@@ -85,7 +85,7 @@ void JuliaAstDefaultVisitor::visitMacro(AstNode* node)
     }
 }
 
-void JuliaAstDefaultVisitor::visitCall(AstNode* node)
+void JuliaAstDefaultVisitor::visitCall(CallNode* node)
 {
     if (!node) return;
     for (AstNode* child : node->children()) {
@@ -185,7 +185,7 @@ void JuliaAstDefaultVisitor::visitExport(AstNode* node)
     }
 }
 
-void JuliaAstDefaultVisitor::visitCurly(AstNode* node)
+void JuliaAstDefaultVisitor::visitCurly(CurlyNode* node)
 {
     if (!node) return;
     for (AstNode* child : node->children()) {
