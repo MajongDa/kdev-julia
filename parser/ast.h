@@ -62,7 +62,6 @@ enum class NodeKind {
     Import,
     Export,
     
-    Equals,
     ColonEquals,
     Dot,
     Colon,

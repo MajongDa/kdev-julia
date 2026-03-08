@@ -40,7 +40,7 @@ NodeKind stringToNodeKind(const QString& kindStr)
         {QStringLiteral("using"), NodeKind::Using},
         {QStringLiteral("import"), NodeKind::Import},
         {QStringLiteral("export"), NodeKind::Export},
-        {QStringLiteral("="), NodeKind::Equals},
+        {QStringLiteral("="), NodeKind::Assignment},
         {QStringLiteral("ref"), NodeKind::Ref},
         {QStringLiteral("vect"), NodeKind::Vect},
         {QStringLiteral("generator"), NodeKind::Generator},
@@ -86,7 +86,7 @@ QString nodeKindToString(NodeKind kind)
         case NodeKind::Primitive: return QStringLiteral("primitive");
         case NodeKind::Macro: return QStringLiteral("macro");
         case NodeKind::MacroCall: return QStringLiteral("macrocall");
-        case NodeKind::Assignment: return QStringLiteral("assignment");
+        case NodeKind::Assignment: return QStringLiteral("=");
         case NodeKind::Return: return QStringLiteral("return");
         case NodeKind::If: return QStringLiteral("if");
         case NodeKind::While: return QStringLiteral("while");
@@ -106,7 +106,6 @@ QString nodeKindToString(NodeKind kind)
         case NodeKind::Using: return QStringLiteral("using");
         case NodeKind::Import: return QStringLiteral("import");
         case NodeKind::Export: return QStringLiteral("export");
-        case NodeKind::Equals: return QStringLiteral("=");
         case NodeKind::ColonEquals: return QStringLiteral(":=");
         case NodeKind::Dot: return QStringLiteral(".");
         case NodeKind::Colon: return QStringLiteral(":");
@@ -293,7 +292,6 @@ void AstNode::accept(AstVisitor* visitor)
         case NodeKind::Primitive: visitor->visitPrimitive(this); break;
         case NodeKind::Macro: visitor->visitMacroCall(this); break;
         case NodeKind::MacroCall: visitor->visitMacroCall(this); break;
-        case NodeKind::Assignment: visitor->visitAssignment(this); break;
         case NodeKind::Return: visitor->visitReturn(this); break;
         case NodeKind::If: visitor->visitIf(this); break;
         case NodeKind::While: visitor->visitWhile(this); break;
@@ -322,7 +320,9 @@ void AstNode::accept(AstVisitor* visitor)
         case NodeKind::Using: visitor->visitUsing(this); break;
         case NodeKind::Import: visitor->visitImport(this); break;
         case NodeKind::Export: visitor->visitExport(this); break;
-        case NodeKind::Equals: visitor->visitEquals(this); break;
+        case NodeKind::Assignment:
+            visitor->visitAssignment(static_cast<AssignmentNode*>(this));
+            break;
         case NodeKind::ColonEquals: visitor->visitColonEquals(this); break;
         case NodeKind::Dot: visitor->visitDot(this); break;
         case NodeKind::Colon: visitor->visitColon(this); break;
