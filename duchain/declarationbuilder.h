@@ -38,10 +38,10 @@ protected:
     void visitUsing(AstNode* node) override;
     void visitImport(AstNode* node) override;
     void visitExport(AstNode* node) override;
+    void visitAssignment(AssignmentNode* node) override;
 
-    // Helper methods
-    void visitFunctionParameters(AstNode* node, FunctionNode* funcNode);
-    void visitFunctionBody(AstNode* node, FunctionNode* funcNode);
+    // Note: visitFunctionParameters and visitFunctionBody are inherited from ContextBuilder
+    // They create contexts and should be called after creating declarations
 
 private:
     JuliaEditorIntegrator* m_editor;

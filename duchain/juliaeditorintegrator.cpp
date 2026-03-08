@@ -20,7 +20,7 @@ KDevelop::CursorInRevision JuliaEditorIntegrator::findPosition(const AstNode* no
 
     KDevelop::RangeInRevision range = node->range();
     if (edge == BackEdge) {
-        return KDevelop::CursorInRevision(range.end.line, range.end.column + 1);
+        return KDevelop::CursorInRevision(range.end.line, range.end.column);
     } else {
         return KDevelop::CursorInRevision(range.start.line, range.start.column);
     }

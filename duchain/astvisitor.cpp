@@ -132,8 +132,8 @@ void AstVisitor::visitNode(AstNode* node)
         case NodeKind::Export:
             visitExport(node);
             break;
-        case NodeKind::Equals:
-            visitEquals(node);
+        case NodeKind::Assignment:
+            visitAssignment(static_cast<AssignmentNode*>(node));
             break;
         case NodeKind::ColonEquals:
             visitColonEquals(node);
@@ -167,9 +167,6 @@ void AstVisitor::visitNode(AstNode* node)
             break;
         case NodeKind::Operator:
             visitOperator(node);
-            break;
-        case NodeKind::Assignment:
-            visitAssignment(node);
             break;
         default:
             break;

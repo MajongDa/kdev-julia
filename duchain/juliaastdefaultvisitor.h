@@ -22,7 +22,7 @@ public:
     void visitMacro(AstNode* node) override;
 
     // Statements
-    void visitAssignment(AstNode* node) override;
+    void visitAssignment(AssignmentNode* node) override;
     void visitReturn(AstNode* node) override;
     void visitIf(AstNode* node) override;
     void visitWhile(AstNode* node) override;
@@ -66,7 +66,6 @@ public:
     void visitNewline(AstNode* node) override;
     void visitSemicolon(AstNode* node) override;
     void visitComma(AstNode* node) override;
-    void visitEquals(AstNode* node) override;
     void visitColonEquals(AstNode* node) override;
     void visitBreak(AstNode* node) override;
     void visitContinue(AstNode* node) override;

@@ -42,11 +42,14 @@ void UseBuilder::visitIdentifier(AstNode* node)
     }
     
     // Find context at identifier position from the built DUChain (Python-style)
+    qCDebug(KDEV_JULIA) << "  UseBuilder::visitIdentifier: topContext=" << topContext() 
+                         << "currentContext=" << currentContext();
     KDevelop::DUContext* ctx = nullptr;
     {
         KDevelop::DUChainReadLocker lock(KDevelop::DUChain::lock());
         ctx = topContext()->findContextAt(node->range().start, true);
     }
+    qCDebug(KDEV_JULIA) << "  findContextAt returned:" << ctx;
     if (!ctx) {
         ctx = currentContext();  // fallback
     }

@@ -42,7 +42,13 @@ protected:
     void visitTopLevel(AstNode* node) override;
     void visitFunction(FunctionNode* node) override;
     void visitStruct(StructNode* node) override;
+    void visitStructBody(StructNode* node);
     void visitModule(AstNode* node) override;
+    void visitModuleBody(AstNode* node);
+    void visitAbstract(AstNode* node) override;
+    void visitAbstractBody(AstNode* node);
+    void visitPrimitive(AstNode* node) override;
+    void visitPrimitiveBody(AstNode* node);
     void visitBlock(AstNode* node) override;
 
     // For function parameters and body

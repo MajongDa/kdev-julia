@@ -85,7 +85,8 @@ void ContextBuilder::visitFunction(FunctionNode* node)
 void ContextBuilder::visitFunctionParameters(AstNode* node, FunctionNode* funcNode)
 {
     KDevelop::QualifiedIdentifier funcId = extractFunctionId(funcNode);
-    qCDebug(KDEV_JULIA) << "ContextBuilder::visitFunctionParameters:" << funcId.toString();
+    qCDebug(KDEV_JULIA) << "ContextBuilder::visitFunctionParameters:" << funcId.toString()
+                         << "compilingContexts=" << compilingContexts();
     
     AstNode* argsNode = funcNode->arguments();
     if (!argsNode) {
@@ -93,10 +94,15 @@ void ContextBuilder::visitFunctionParameters(AstNode* node, FunctionNode* funcNo
         return;
     }
     
-    KDevelop::RangeInRevision range = rangeForArgumentsContext(funcNode);
-    qCDebug(KDEV_JULIA) << "  Opening Function context, range=" << range;
-    
-    openContext(argsNode, range, KDevelop::DUContext::Function, funcId);
+    // Check if context already exists on the argsNode (for second pass)
+    if (argsNode->context) {
+        qCDebug(KDEV_JULIA) << "  Reusing existing Function context from argsNode";
+        openContext(argsNode->context);
+    } else {
+        KDevelop::RangeInRevision range = rangeForArgumentsContext(funcNode);
+        qCDebug(KDEV_JULIA) << "  Opening Function context, range=" << range;
+        openContext(argsNode, range, KDevelop::DUContext::Function, funcId);
+    }
     
     for (AstNode* child : node->children()) {
         if (!child) continue;
@@ -115,7 +121,8 @@ void ContextBuilder::visitFunctionParameters(AstNode* node, FunctionNode* funcNo
 void ContextBuilder::visitFunctionBody(AstNode* /*node*/, FunctionNode* funcNode)
 {
     KDevelop::QualifiedIdentifier funcId = extractFunctionId(funcNode);
-    qCDebug(KDEV_JULIA) << "ContextBuilder::visitFunctionBody:" << funcId.toString();
+    qCDebug(KDEV_JULIA) << "ContextBuilder::visitFunctionBody:" << funcId.toString()
+                         << "compilingContexts=" << compilingContexts();
     
     AstNode* bodyNode = funcNode->body();
     if (!bodyNode) {
@@ -123,9 +130,15 @@ void ContextBuilder::visitFunctionBody(AstNode* /*node*/, FunctionNode* funcNode
         return;
     }
     
-    KDevelop::RangeInRevision bodyRange = bodyNode->range();
-    qCDebug(KDEV_JULIA) << "  Opening Other context for body, range=" << bodyRange;
-    openContext(bodyNode, bodyRange, KDevelop::DUContext::Other, funcId);
+    // Check if context already exists on the bodyNode (for second pass)
+    if (bodyNode->context) {
+        qCDebug(KDEV_JULIA) << "  Reusing existing Other context from bodyNode";
+        openContext(bodyNode->context);
+    } else {
+        KDevelop::RangeInRevision bodyRange = bodyNode->range();
+        qCDebug(KDEV_JULIA) << "  Opening Other context for body, range=" << bodyRange;
+        openContext(bodyNode, bodyRange, KDevelop::DUContext::Other, funcId);
+    }
     
     // Set local scope identifier to help findDeclarations resolve identifiers
     {
@@ -211,7 +224,20 @@ void ContextBuilder::visitStruct(StructNode* node)
     if (!node) {
         return;
     }
-    qCDebug(KDEV_JULIA) << ">>> ContextBuilder::visitStruct";
+    qCDebug(KDEV_JULIA) << ">>> ContextBuilder::visitStruct (traverse only)";
+    
+    // Just traverse children - context is created by visitStructBody
+    JuliaAstDefaultVisitor::visitStruct(node);
+    
+    qCDebug(KDEV_JULIA) << "<<< ContextBuilder::visitStruct DONE";
+}
+
+void ContextBuilder::visitStructBody(StructNode* node)
+{
+    if (!node) {
+        return;
+    }
+    qCDebug(KDEV_JULIA) << ">>> ContextBuilder::visitStructBody (create context)";
     
     AstNode* nameNode = node->firstChild();
     
@@ -230,15 +256,20 @@ void ContextBuilder::visitStruct(StructNode* node)
     
     qCDebug(KDEV_JULIA) << "  Struct name:" << structId.toString() << "range:" << node->range();
     
-    KDevelop::RangeInRevision range = node->range();
-    
-    openContext(node, range, KDevelop::DUContext::Class, structId);
+    // Check if context already exists on the node (for second pass)
+    if (node->context) {
+        qCDebug(KDEV_JULIA) << "  Reusing existing Class context";
+        openContext(node->context);
+    } else {
+        KDevelop::RangeInRevision range = node->range();
+        openContext(node, range, KDevelop::DUContext::Class, structId);
+    }
     
     // Traverse children using base class
     JuliaAstDefaultVisitor::visitStruct(node);
     
     closeContext();
-    qCDebug(KDEV_JULIA) << "<<< ContextBuilder::visitStruct DONE";
+    qCDebug(KDEV_JULIA) << "<<< ContextBuilder::visitStructBody DONE";
 }
 
 void ContextBuilder::visitModule(AstNode* node)
@@ -246,7 +277,20 @@ void ContextBuilder::visitModule(AstNode* node)
     if (!node) {
         return;
     }
-    qCDebug(KDEV_JULIA) << ">>> ContextBuilder::visitModule";
+    qCDebug(KDEV_JULIA) << ">>> ContextBuilder::visitModule (traverse only)";
+    
+    // Just traverse children - context is created by visitModuleBody
+    JuliaAstDefaultVisitor::visitModule(node);
+    
+    qCDebug(KDEV_JULIA) << "<<< ContextBuilder::visitModule DONE";
+}
+
+void ContextBuilder::visitModuleBody(AstNode* node)
+{
+    if (!node) {
+        return;
+    }
+    qCDebug(KDEV_JULIA) << ">>> ContextBuilder::visitModuleBody (create context)";
     
     AstNode* nameNode = node->firstChild();
     
@@ -256,15 +300,104 @@ void ContextBuilder::visitModule(AstNode* node)
     }
     qCDebug(KDEV_JULIA) << "  Module name:" << moduleId.toString() << "range:" << node->range();
     
-    KDevelop::RangeInRevision range = node->range();
-    
-    openContext(node, range, KDevelop::DUContext::Namespace, moduleId);
+    // Check if context already exists on the node (for second pass)
+    if (node->context) {
+        qCDebug(KDEV_JULIA) << "  Reusing existing Namespace context";
+        openContext(node->context);
+    } else {
+        KDevelop::RangeInRevision range = node->range();
+        openContext(node, range, KDevelop::DUContext::Namespace, moduleId);
+    }
     
     // Traverse children using base class
     JuliaAstDefaultVisitor::visitModule(node);
     
     closeContext();
-    qCDebug(KDEV_JULIA) << "<<< ContextBuilder::visitModule DONE";
+    qCDebug(KDEV_JULIA) << "<<< ContextBuilder::visitModuleBody DONE";
+}
+
+void ContextBuilder::visitAbstract(AstNode* node)
+{
+    if (!node) {
+        return;
+    }
+    qCDebug(KDEV_JULIA) << ">>> ContextBuilder::visitAbstract (traverse only)";
+    
+    // Just traverse children - context is created by visitAbstractBody
+    JuliaAstDefaultVisitor::visitAbstract(node);
+    
+    qCDebug(KDEV_JULIA) << "<<< ContextBuilder::visitAbstract DONE";
+}
+
+void ContextBuilder::visitAbstractBody(AstNode* node)
+{
+    if (!node) {
+        return;
+    }
+    qCDebug(KDEV_JULIA) << ">>> ContextBuilder::visitAbstractBody (create context)";
+    
+    AstNode* nameNode = node->firstChild();
+    KDevelop::QualifiedIdentifier abstractId;
+    if (nameNode && nameNode->kind() == NodeKind::Identifier) {
+        abstractId = KDevelop::QualifiedIdentifier(nameNode->text());
+    }
+    qCDebug(KDEV_JULIA) << "  Abstract name:" << abstractId.toString();
+    
+    // Check if context already exists on the node (for second pass)
+    if (node->context) {
+        qCDebug(KDEV_JULIA) << "  Reusing existing Class context";
+        openContext(node->context);
+    } else {
+        KDevelop::RangeInRevision range = node->range();
+        openContext(node, range, KDevelop::DUContext::Class, abstractId);
+    }
+    
+    JuliaAstDefaultVisitor::visitAbstract(node);
+    
+    closeContext();
+    qCDebug(KDEV_JULIA) << "<<< ContextBuilder::visitAbstractBody DONE";
+}
+
+void ContextBuilder::visitPrimitive(AstNode* node)
+{
+    if (!node) {
+        return;
+    }
+    qCDebug(KDEV_JULIA) << ">>> ContextBuilder::visitPrimitive (traverse only)";
+    
+    // Just traverse children - context is created by visitPrimitiveBody
+    JuliaAstDefaultVisitor::visitPrimitive(node);
+    
+    qCDebug(KDEV_JULIA) << "<<< ContextBuilder::visitPrimitive DONE";
+}
+
+void ContextBuilder::visitPrimitiveBody(AstNode* node)
+{
+    if (!node) {
+        return;
+    }
+    qCDebug(KDEV_JULIA) << ">>> ContextBuilder::visitPrimitiveBody (create context)";
+    
+    AstNode* nameNode = node->firstChild();
+    KDevelop::QualifiedIdentifier primitiveId;
+    if (nameNode && nameNode->kind() == NodeKind::Identifier) {
+        primitiveId = KDevelop::QualifiedIdentifier(nameNode->text());
+    }
+    qCDebug(KDEV_JULIA) << "  Primitive name:" << primitiveId.toString();
+    
+    // Check if context already exists on the node (for second pass)
+    if (node->context) {
+        qCDebug(KDEV_JULIA) << "  Reusing existing Class context";
+        openContext(node->context);
+    } else {
+        KDevelop::RangeInRevision range = node->range();
+        openContext(node, range, KDevelop::DUContext::Class, primitiveId);
+    }
+    
+    JuliaAstDefaultVisitor::visitPrimitive(node);
+    
+    closeContext();
+    qCDebug(KDEV_JULIA) << "<<< ContextBuilder::visitPrimitiveBody DONE";
 }
 
 void ContextBuilder::visitBlock(AstNode* node)
@@ -274,9 +407,14 @@ void ContextBuilder::visitBlock(AstNode* node)
     }
     qCDebug(KDEV_JULIA) << ">>> ContextBuilder::visitBlock:" << node->range();
     
-    KDevelop::RangeInRevision range = node->range();
-    
-    openContext(node, range, KDevelop::DUContext::Other, KDevelop::QualifiedIdentifier());
+    // Check if context already exists on the node (for second pass)
+    if (node->context) {
+        qCDebug(KDEV_JULIA) << "  Reusing existing Other context";
+        openContext(node->context);
+    } else {
+        KDevelop::RangeInRevision range = node->range();
+        openContext(node, range, KDevelop::DUContext::Other, KDevelop::QualifiedIdentifier());
+    }
     
     // Traverse children using base class
     JuliaAstDefaultVisitor::visitBlock(node);
@@ -288,8 +426,12 @@ void ContextBuilder::visitBlock(AstNode* node)
 KDevelop::DUContext* ContextBuilder::contextFromNode(AstNode* node)
 {
     if (!node) {
+        qCDebug(KDEV_JULIA) << "contextFromNode: node is null";
         return nullptr;
     }
+    qCDebug(KDEV_JULIA) << "contextFromNode: node kind=" << nodeKindToString(node->kind()) 
+                         << "has context=" << (node->context != nullptr)
+                         << "compilingContexts=" << compilingContexts();
     return node->context;
 }
 
@@ -298,6 +440,8 @@ void ContextBuilder::setContextOnNode(AstNode* node, KDevelop::DUContext* contex
     if (!node) {
         return;
     }
+    qCDebug(KDEV_JULIA) << "setContextOnNode: node kind=" << nodeKindToString(node->kind()) 
+                         << "context=" << context << "compilingContexts=" << compilingContexts();
     node->context = context;
 }
 

@@ -95,7 +95,7 @@ void JuliaAstDefaultVisitor::visitCall(CallNode* node)
     }
 }
 
-void JuliaAstDefaultVisitor::visitAssignment(AstNode* node)
+void JuliaAstDefaultVisitor::visitAssignment(AssignmentNode* node)
 {
     if (!node) return;
     for (AstNode* child : node->children()) {
@@ -335,22 +335,21 @@ void JuliaAstDefaultVisitor::visitMacroCall(AstNode* node)
     }
 }
 
-void JuliaAstDefaultVisitor::visitIdentifier(AstNode* node) {}
-void JuliaAstDefaultVisitor::visitString(AstNode* node) {}
-void JuliaAstDefaultVisitor::visitFloat(AstNode* node) {}
-void JuliaAstDefaultVisitor::visitInteger(AstNode* node) {}
-void JuliaAstDefaultVisitor::visitBool(AstNode* node) {}
-void JuliaAstDefaultVisitor::visitOperator(AstNode* node) {}
-void JuliaAstDefaultVisitor::visitComment(AstNode* node) {}
-void JuliaAstDefaultVisitor::visitWhitespace(AstNode* node) {}
-void JuliaAstDefaultVisitor::visitNewline(AstNode* node) {}
-void JuliaAstDefaultVisitor::visitSemicolon(AstNode* node) {}
-void JuliaAstDefaultVisitor::visitComma(AstNode* node) {}
-void JuliaAstDefaultVisitor::visitEquals(AstNode* node) {}
-void JuliaAstDefaultVisitor::visitColonEquals(AstNode* node) {}
-void JuliaAstDefaultVisitor::visitBreak(AstNode* node) {}
-void JuliaAstDefaultVisitor::visitContinue(AstNode* node) {}
-void JuliaAstDefaultVisitor::visitError(AstNode* node) {}
-void JuliaAstDefaultVisitor::visitUnknown(AstNode* node) {}
+void JuliaAstDefaultVisitor::visitIdentifier(AstNode*) {}
+void JuliaAstDefaultVisitor::visitString(AstNode*) {}
+void JuliaAstDefaultVisitor::visitFloat(AstNode*) {}
+void JuliaAstDefaultVisitor::visitInteger(AstNode*) {}
+void JuliaAstDefaultVisitor::visitBool(AstNode*) {}
+void JuliaAstDefaultVisitor::visitOperator(AstNode*) {}
+void JuliaAstDefaultVisitor::visitComment(AstNode*) {}
+void JuliaAstDefaultVisitor::visitWhitespace(AstNode*) {}
+void JuliaAstDefaultVisitor::visitNewline(AstNode*) {}
+void JuliaAstDefaultVisitor::visitSemicolon(AstNode*) {}
+void JuliaAstDefaultVisitor::visitComma(AstNode*) {}
+void JuliaAstDefaultVisitor::visitColonEquals(AstNode*) {}
+void JuliaAstDefaultVisitor::visitBreak(AstNode*) {}
+void JuliaAstDefaultVisitor::visitContinue(AstNode*) {}
+void JuliaAstDefaultVisitor::visitError(AstNode*) {}
+void JuliaAstDefaultVisitor::visitUnknown(AstNode*) {}
 
 }

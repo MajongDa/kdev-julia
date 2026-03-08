@@ -88,11 +88,51 @@ void ExpressionVisitor::visitIdentifier(AstNode* node)
 
     KDevelop::QualifiedIdentifier id(name);
     
+    qCDebug(KDEV_JULIA) << "  ExpressionVisitor: Looking up identifier:" << id.toString() 
+                         << "in context:" << context() << "range:" << context()->range();
+    
+    // Debug: list all declarations in this context
+    qCDebug(KDEV_JULIA) << "  Context has" << context()->localDeclarations().size() << "local declarations";
+    for (auto* decl : context()->localDeclarations()) {
+        qCDebug(KDEV_JULIA) << "    Decl:" << decl->identifier().toString() << "range:" << decl->range();
+    }
+    
     KDevelop::DUChainReadLocker lock(KDevelop::DUChain::lock());
     
-    QList<KDevelop::Declaration*> declarations = context()->findDeclarations(id);
+    // Search with position and also search in parent contexts
+    KDevelop::CursorInRevision searchPos = KDevelop::CursorInRevision::invalid();
+    qCDebug(KDEV_JULIA) << "  Searching with position:" << searchPos;
     
-    qCDebug(KDEV_JULIA) << "  ExpressionVisitor: Looking up identifier:" << id.toString() << "found" << declarations.size() << "declarations";
+    // First try findLocalDeclarations (like Python's helpers.cpp does)
+    QList<KDevelop::Declaration*> declarations = context()->findLocalDeclarations(
+        id.last(), searchPos, nullptr,
+        KDevelop::AbstractType::Ptr(), KDevelop::DUContext::DontResolveAliases);
+    
+    // If not found locally, try findDeclarations
+    if (declarations.isEmpty()) {
+        declarations = context()->findDeclarations(id, searchPos);
+    }
+    
+    // If still not found, search in parent contexts
+    if (declarations.isEmpty()) {
+        qCDebug(KDEV_JULIA) << "  Not found directly, searching parent contexts...";
+        KDevelop::DUContext* parent = context()->parentContext();
+        while (parent && declarations.isEmpty()) {
+            qCDebug(KDEV_JULIA) << "    Searching in parent context:" << parent << "range:" << parent->range();
+            declarations = parent->findLocalDeclarations(
+                id.last(), searchPos, nullptr,
+                KDevelop::AbstractType::Ptr(), KDevelop::DUContext::DontResolveAliases);
+            if (declarations.isEmpty()) {
+                declarations = parent->findDeclarations(id, searchPos);
+            }
+            if (!declarations.isEmpty()) {
+                qCDebug(KDEV_JULIA) << "    Found in parent!";
+            }
+            parent = parent->parentContext();
+        }
+    }
+    
+    qCDebug(KDEV_JULIA) << "  ExpressionVisitor: Found" << declarations.size() << "declarations";
     
     if (!declarations.isEmpty()) {
         KDevelop::Declaration* decl = declarations.first();

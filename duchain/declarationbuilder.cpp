@@ -109,6 +109,7 @@ void DeclarationBuilder::visitFunction(FunctionNode* node)
     qCDebug(KDEV_JULIA) << ">>> DeclarationBuilder::visitFunction";
 
     QString name = node->functionName();
+    qCDebug(KDEV_JULIA) << "  Function name:" << name;
     
     if (!name.isEmpty()) {
         AstNode* nameNode = node->firstChild();
@@ -117,8 +118,11 @@ void DeclarationBuilder::visitFunction(FunctionNode* node)
         }
         
         auto* decl = openDeclaration<KDevelop::FunctionDeclaration>(nameNode, node);
+        qCDebug(KDEV_JULIA) << "  openDeclaration returned:" << decl << "in context:" << currentContext();
         if (decl) {
-            decl->setKind(KDevelop::Declaration::Type);
+            qCDebug(KDEV_JULIA) << "  Function declaration created:" << name << "in context:" << currentContext();
+            // Use Instance for functions (not Type which is for classes/structs)
+            decl->setKind(KDevelop::Declaration::Instance);
             decl->setInSymbolTable(false);
             
             // Create FunctionType
@@ -153,7 +157,15 @@ void DeclarationBuilder::visitFunction(FunctionNode* node)
             }
             
             decl->setType(funcType);
+            
+            // Save pointer before closing - we need it after closeDeclaration
+            KDevelop::Declaration* funcDecl = decl;
             closeDeclaration();
+            
+            // Register in symbol table - this is critical for navigation to work!
+            if (funcDecl) {
+                funcDecl->setInSymbolTable(true);
+            }
         }
     }
     
@@ -174,8 +186,10 @@ void DeclarationBuilder::visitFunction(FunctionNode* node)
         }
     }
     
-    // Continue traversal - this will also create function context via ContextBuilder
-    ContextBuilder::visitFunction(node);
+    // Continue traversal - call inherited methods from ContextBuilder to create contexts
+    // (NOT visitFunction which would cause infinite recursion)
+    visitFunctionParameters(node, node);
+    visitFunctionBody(node, node);
     
     qCDebug(KDEV_JULIA) << "<<< DeclarationBuilder::visitFunction DONE";
 }
@@ -211,8 +225,8 @@ void DeclarationBuilder::visitStruct(StructNode* node)
         }
     }
     
-    // Continue traversal - this will also create struct context via ContextBuilder
-    ContextBuilder::visitStruct(node);
+    // Continue traversal - call inherited method from ContextBuilder to create struct context
+    visitStructBody(node);
     
     qCDebug(KDEV_JULIA) << "<<< DeclarationBuilder::visitStruct DONE";
 }
@@ -240,8 +254,8 @@ void DeclarationBuilder::visitModule(AstNode* node)
         }
     }
     
-    // Continue traversal - this will also create module context via ContextBuilder
-    ContextBuilder::visitModule(node);
+    // Continue traversal - call inherited method from ContextBuilder to create module context
+    visitModuleBody(node);
     
     qCDebug(KDEV_JULIA) << "<<< DeclarationBuilder::visitModule DONE";
 }
@@ -268,7 +282,9 @@ void DeclarationBuilder::visitAbstract(AstNode* node)
         }
     }
     
-    // Traversal is handled by ContextBuilder
+    // Continue traversal - call inherited method from ContextBuilder to create abstract context
+    visitAbstractBody(node);
+    
     qCDebug(KDEV_JULIA) << "<<< DeclarationBuilder::visitAbstract DONE";
 }
 
@@ -294,7 +310,9 @@ void DeclarationBuilder::visitPrimitive(AstNode* node)
         }
     }
     
-    // Traversal is handled by ContextBuilder
+    // Continue traversal - call inherited method from ContextBuilder to create primitive context
+    visitPrimitiveBody(node);
+    
     qCDebug(KDEV_JULIA) << "<<< DeclarationBuilder::visitPrimitive DONE";
 }
 
@@ -493,6 +511,56 @@ void DeclarationBuilder::visitExport(AstNode* node)
     
     // Traversal is handled by ContextBuilder
     qCDebug(KDEV_JULIA) << "<<< DeclarationBuilder::visitExport DONE";
+}
+
+void DeclarationBuilder::visitAssignment(AssignmentNode* node)
+{
+    if (!node) {
+        return;
+    }
+    qCDebug(KDEV_JULIA) << ">>> DeclarationBuilder::visitAssignment";
+    
+    // First traverse children to build contexts (like JuliaAstDefaultVisitor does)
+    JuliaAstDefaultVisitor::visitAssignment(node);
+    
+    // Get target and value
+    AstNode* target = node->leftHandSide();
+    AstNode* value = node->rightHandSide();
+    
+    if (!target || !value) {
+        qCDebug(KDEV_JULIA) << "  No target or value, skipping";
+        return;
+    }
+    
+    // Only handle simple identifiers for now
+    if (target->kind() != NodeKind::Identifier) {
+        qCDebug(KDEV_JULIA) << "  Target is not identifier, skipping";
+        return;
+    }
+    
+    // Get type from value using ExpressionVisitor
+    ExpressionVisitor v(currentContext());
+    v.visitNode(value);
+    
+    KDevelop::AbstractType::Ptr valueType = v.lastType();
+    if (!valueType) {
+        qCDebug(KDEV_JULIA) << "  No type found for value, using mixed";
+        auto* mixedType = new KDevelop::IntegralType(KDevelop::IntegralType::TypeMixed);
+        valueType = KDevelop::AbstractType::Ptr(mixedType);
+    }
+    
+    // Create declaration for target
+    KDevelop::Declaration* decl = openDeclaration<KDevelop::Declaration>(target, target);
+    if (decl) {
+        decl->setType(valueType);
+        qCDebug(KDEV_JULIA) << "  Assignment declaration created:" << target->text() << "type:" << valueType->toString();
+        KDevelop::Declaration* varDecl = decl;
+        closeDeclaration();
+        // Register in symbol table for navigation to work
+        varDecl->setInSymbolTable(true);
+    }
+    
+    qCDebug(KDEV_JULIA) << "<<< DeclarationBuilder::visitAssignment DONE";
 }
 
 // ============================================================================
