@@ -67,6 +67,7 @@ set(kdevjulialanguagesupport_PART_SRCS
     duchain/helpers.cpp
     duchain/juliaeditorintegrator.cpp
     duchain/juliaducontext.cpp
+    duchain/navigation/navigationwidget.cpp
     # Type mapping
     types/types.cpp
     # Completion
