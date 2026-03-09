@@ -39,6 +39,9 @@ void AstVisitor::visitNode(AstNode* node)
         case NodeKind::Module:
             visitModule(node);
             break;
+        case NodeKind::Baremodule:
+            visitBaremodule(static_cast<BaremoduleNode*>(node));
+            break;
         case NodeKind::Abstract:
             visitAbstract(node);
             break;
@@ -57,11 +60,26 @@ void AstVisitor::visitNode(AstNode* node)
         case NodeKind::If:
             visitIf(node);
             break;
+        case NodeKind::ElseIf:
+            visitElseIf(node);
+            break;
+        case NodeKind::Else:
+            visitElse(node);
+            break;
         case NodeKind::While:
             visitWhile(node);
             break;
         case NodeKind::For:
             visitFor(node);
+            break;
+        case NodeKind::Try:
+            visitTry(static_cast<TryNode*>(node));
+            break;
+        case NodeKind::Catch:
+            visitCatch(node);
+            break;
+        case NodeKind::Finally:
+            visitFinally(node);
             break;
         case NodeKind::Break:
             visitBreak(node);
@@ -134,6 +152,27 @@ void AstVisitor::visitNode(AstNode* node)
             break;
         case NodeKind::Assignment:
             visitAssignment(static_cast<AssignmentNode*>(node));
+            break;
+        case NodeKind::Const:
+            visitConst(static_cast<ConstNode*>(node));
+            break;
+        case NodeKind::Global:
+            visitGlobal(static_cast<GlobalNode*>(node));
+            break;
+        case NodeKind::Local:
+            visitLocal(static_cast<LocalNode*>(node));
+            break;
+        case NodeKind::Let:
+            visitLet(static_cast<LetNode*>(node));
+            break;
+        case NodeKind::Do:
+            visitDo(static_cast<DoNode*>(node));
+            break;
+        case NodeKind::Quote:
+            visitQuote(static_cast<QuoteNode*>(node));
+            break;
+        case NodeKind::End:
+            visitEnd(node);
             break;
         case NodeKind::ColonEquals:
             visitColonEquals(node);

@@ -24,6 +24,7 @@ enum class NodeKind {
     Function,
     Struct,
     Module,
+    Baremodule,
     Abstract,
     Primitive,
     Macro,
@@ -32,8 +33,13 @@ enum class NodeKind {
     Assignment,
     Return,
     If,
+    ElseIf,
+    Else,
     While,
     For,
+    Try,
+    Catch,
+    Finally,
     Break,
     Continue,
     
@@ -61,6 +67,14 @@ enum class NodeKind {
     Using,
     Import,
     Export,
+    
+    Const,
+    Global,
+    Local,
+    Let,
+    Do,
+    Quote,
+    End,
     
     ColonEquals,
     Dot,
@@ -134,6 +148,7 @@ public:
     FunctionNode(const QString& name, const KDevelop::RangeInRevision& range);
     
     QString functionName() const;
+    AstNode* functionNameNode() const;
     AstNode* arguments() const;
     AstNode* body() const;
     AstNode* returnType() const;
@@ -232,6 +247,360 @@ public:
     
 private:
     bool m_isFloat;
+};
+
+class TupleNode : public AstNode
+{
+public:
+    TupleNode(const QString& name, const KDevelop::RangeInRevision& range);
+    
+    QList<AstNode*> elements() const;
+    
+    QString dump(int indent = 0) const override;
+};
+
+class ArrayNode : public AstNode
+{
+public:
+    ArrayNode(const QString& name, const KDevelop::RangeInRevision& range);
+    
+    QList<AstNode*> elements() const;
+    
+    QString dump(int indent = 0) const override;
+};
+
+class TryNode : public AstNode
+{
+public:
+    TryNode(const KDevelop::RangeInRevision& range);
+    
+    AstNode* tryBody() const;
+    AstNode* catchVariable() const;
+    AstNode* catchBody() const;
+    AstNode* finallyBody() const;
+    
+    QString dump(int indent = 0) const override;
+};
+
+class ConstNode : public AstNode
+{
+public:
+    ConstNode(const KDevelop::RangeInRevision& range);
+    
+    AstNode* target() const;
+    AstNode* value() const;
+    
+    QString dump(int indent = 0) const override;
+};
+
+class LetNode : public AstNode
+{
+public:
+    LetNode(const KDevelop::RangeInRevision& range);
+    
+    QList<AstNode*> bindings() const;
+    AstNode* body() const;
+    
+    QString dump(int indent = 0) const override;
+};
+
+class DoNode : public AstNode
+{
+public:
+    DoNode(const KDevelop::RangeInRevision& range);
+    
+    QList<AstNode*> arguments() const;
+    AstNode* body() const;
+    
+    QString dump(int indent = 0) const override;
+};
+
+class QuoteNode : public AstNode
+{
+public:
+    QuoteNode(const KDevelop::RangeInRevision& range);
+    
+    QList<AstNode*> body() const;
+    
+    QString dump(int indent = 0) const override;
+};
+
+class GlobalNode : public AstNode
+{
+public:
+    GlobalNode(const KDevelop::RangeInRevision& range);
+    
+    QList<AstNode*> identifiers() const;
+    
+    QString dump(int indent = 0) const override;
+};
+
+class LocalNode : public AstNode
+{
+public:
+    LocalNode(const KDevelop::RangeInRevision& range);
+    
+    QList<AstNode*> identifiers() const;
+    
+    QString dump(int indent = 0) const override;
+};
+
+class BaremoduleNode : public AstNode
+{
+public:
+    BaremoduleNode(const QString& name, const KDevelop::RangeInRevision& range);
+    
+    QString moduleName() const;
+    AstNode* body() const;
+    
+    QString dump(int indent = 0) const override;
+};
+
+class ModuleNode : public AstNode
+{
+public:
+    ModuleNode(const QString& name, const KDevelop::RangeInRevision& range);
+    
+    QString moduleName() const;
+    AstNode* body() const;
+    
+    QString dump(int indent = 0) const override;
+};
+
+class BeginNode : public AstNode
+{
+public:
+    BeginNode(const KDevelop::RangeInRevision& range);
+    
+    AstNode* body() const;
+    
+    QString dump(int indent = 0) const override;
+};
+
+class BreakNode : public AstNode
+{
+public:
+    BreakNode(const KDevelop::RangeInRevision& range);
+    
+    QString dump(int indent = 0) const override;
+};
+
+class ContinueNode : public AstNode
+{
+public:
+    ContinueNode(const KDevelop::RangeInRevision& range);
+    
+    QString dump(int indent = 0) const override;
+};
+
+class ReturnNode : public AstNode
+{
+public:
+    ReturnNode(const KDevelop::RangeInRevision& range);
+    
+    AstNode* value() const;
+    
+    QString dump(int indent = 0) const override;
+};
+
+class WhileNode : public AstNode
+{
+public:
+    WhileNode(const KDevelop::RangeInRevision& range);
+    
+    AstNode* condition() const;
+    AstNode* body() const;
+    
+    QString dump(int indent = 0) const override;
+};
+
+class ForNode : public AstNode
+{
+public:
+    ForNode(const KDevelop::RangeInRevision& range);
+    
+    AstNode* iterator() const;
+    AstNode* body() const;
+    
+    QString dump(int indent = 0) const override;
+};
+
+class IfNode : public AstNode
+{
+public:
+    IfNode(const KDevelop::RangeInRevision& range);
+    
+    AstNode* condition() const;
+    AstNode* thenBranch() const;
+    AstNode* elseBranch() const;
+    QList<AstNode*> elseifBranches() const;
+    
+    QString dump(int indent = 0) const override;
+};
+
+class ElseIfNode : public AstNode
+{
+public:
+    ElseIfNode(const KDevelop::RangeInRevision& range);
+    
+    AstNode* condition() const;
+    AstNode* body() const;
+    
+    QString dump(int indent = 0) const override;
+};
+
+class ElseNode : public AstNode
+{
+public:
+    ElseNode(const KDevelop::RangeInRevision& range);
+    
+    AstNode* body() const;
+    
+    QString dump(int indent = 0) const override;
+};
+
+class EndNode : public AstNode
+{
+public:
+    EndNode(const KDevelop::RangeInRevision& range);
+    
+    QString dump(int indent = 0) const override;
+};
+
+class ExportNode : public AstNode
+{
+public:
+    ExportNode(const KDevelop::RangeInRevision& range);
+    
+    QList<AstNode*> identifiers() const;
+    
+    QString dump(int indent = 0) const override;
+};
+
+class ImportNode : public AstNode
+{
+public:
+    ImportNode(const KDevelop::RangeInRevision& range);
+    
+    QList<AstNode*> importPaths() const;
+    
+    QString dump(int indent = 0) const override;
+};
+
+class MacroNode : public AstNode
+{
+public:
+    MacroNode(const QString& name, const KDevelop::RangeInRevision& range);
+    
+    QString macroName() const;
+    AstNode* parameters() const;
+    AstNode* body() const;
+    
+    QString dump(int indent = 0) const override;
+};
+
+class AbstractNode : public AstNode
+{
+public:
+    AbstractNode(const QString& name, const KDevelop::RangeInRevision& range);
+    
+    QString typeName() const;
+    AstNode* supertype() const;
+    
+    QString dump(int indent = 0) const override;
+};
+
+class PrimitiveNode : public AstNode
+{
+public:
+    PrimitiveNode(const QString& name, const KDevelop::RangeInRevision& range);
+    
+    QString typeName() const;
+    AstNode* underlyingType() const;
+    
+    QString dump(int indent = 0) const override;
+};
+
+class CatchNode : public AstNode
+{
+public:
+    CatchNode(const KDevelop::RangeInRevision& range);
+    
+    AstNode* variable() const;
+    AstNode* body() const;
+    
+    QString dump(int indent = 0) const override;
+};
+
+class FinallyNode : public AstNode
+{
+public:
+    FinallyNode(const KDevelop::RangeInRevision& range);
+    
+    AstNode* body() const;
+    
+    QString dump(int indent = 0) const override;
+};
+
+class AsNode : public AstNode
+{
+public:
+    AsNode(const KDevelop::RangeInRevision& range);
+    
+    AstNode* original() const;
+    AstNode* alias() const;
+    
+    QString dump(int indent = 0) const override;
+};
+
+class DocNode : public AstNode
+{
+public:
+    DocNode(const KDevelop::RangeInRevision& range);
+    
+    AstNode* document() const;
+    
+    QString dump(int indent = 0) const override;
+};
+
+class MutableNode : public AstNode
+{
+public:
+    MutableNode(const KDevelop::RangeInRevision& range);
+    
+    QString dump(int indent = 0) const override;
+};
+
+class OuterNode : public AstNode
+{
+public:
+    OuterNode(const KDevelop::RangeInRevision& range);
+    
+    QString dump(int indent = 0) const override;
+};
+
+class PublicNode : public AstNode
+{
+public:
+    PublicNode(const KDevelop::RangeInRevision& range);
+    
+    QString dump(int indent = 0) const override;
+};
+
+class VarNode : public AstNode
+{
+public:
+    VarNode(const KDevelop::RangeInRevision& range);
+    
+    QString dump(int indent = 0) const override;
+};
+
+class TypeNode : public AstNode
+{
+public:
+    TypeNode(const KDevelop::RangeInRevision& range);
+    
+    QString dump(int indent = 0) const override;
 };
 
 }

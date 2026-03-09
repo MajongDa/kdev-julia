@@ -39,6 +39,11 @@ protected:
     void visitImport(AstNode* node) override;
     void visitExport(AstNode* node) override;
     void visitAssignment(AssignmentNode* node) override;
+    void visitReturn(AstNode* node) override;
+    void visitStructBody(StructNode* node);
+    void visitMacro(AstNode* node) override;
+    void visitMacroCall(AstNode* node) override;
+    void visitImportPath(AstNode* node) override;
 
     // Note: visitFunctionParameters and visitFunctionBody are inherited from ContextBuilder
     // They create contexts and should be called after creating declarations

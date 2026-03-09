@@ -18,17 +18,33 @@ public:
     virtual void visitFunction(FunctionNode*) {}
     virtual void visitStruct(StructNode*) {}
     virtual void visitModule(AstNode*) {}
+    virtual void visitBaremodule(BaremoduleNode*) {}
     virtual void visitBlock(AstNode*) {}
     
     // Statements
     virtual void visitReturn(AstNode*) {}
     virtual void visitIf(AstNode*) {}
+    virtual void visitElseIf(AstNode*) {}
+    virtual void visitElse(AstNode*) {}
     virtual void visitWhile(AstNode*) {}
     virtual void visitFor(AstNode*) {}
-    virtual void visitTry(AstNode*) {}
+    virtual void visitTry(TryNode*) {}
+    virtual void visitCatch(AstNode*) {}
+    virtual void visitFinally(AstNode*) {}
     virtual void visitAssignment(AssignmentNode*) {}
     virtual void visitBreak(AstNode*) {}
     virtual void visitContinue(AstNode*) {}
+    
+    // Variable declarations
+    virtual void visitConst(ConstNode*) {}
+    virtual void visitGlobal(GlobalNode*) {}
+    virtual void visitLocal(LocalNode*) {}
+    virtual void visitLet(LetNode*) {}
+    virtual void visitDo(DoNode*) {}
+    virtual void visitQuote(QuoteNode*) {}
+    
+    // Other keywords
+    virtual void visitEnd(AstNode*) {}
     
     // Expressions - using specific types where available
     virtual void visitIdentifier(AstNode*) {}

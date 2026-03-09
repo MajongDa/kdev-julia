@@ -17,6 +17,7 @@ public:
     void visitFunction(FunctionNode* node) override;
     void visitStruct(StructNode* node) override;
     void visitModule(AstNode* node) override;
+    void visitBaremodule(BaremoduleNode* node) override;
     void visitAbstract(AstNode* node) override;
     void visitPrimitive(AstNode* node) override;
     void visitMacro(AstNode* node) override;
@@ -25,9 +26,24 @@ public:
     void visitAssignment(AssignmentNode* node) override;
     void visitReturn(AstNode* node) override;
     void visitIf(AstNode* node) override;
+    void visitElseIf(AstNode* node) override;
+    void visitElse(AstNode* node) override;
     void visitWhile(AstNode* node) override;
     void visitFor(AstNode* node) override;
-    void visitTry(AstNode* node) override;
+    void visitTry(TryNode* node) override;
+    void visitCatch(AstNode* node) override;
+    void visitFinally(AstNode* node) override;
+
+    // Variable declarations
+    void visitConst(ConstNode* node) override;
+    void visitGlobal(GlobalNode* node) override;
+    void visitLocal(LocalNode* node) override;
+    void visitLet(LetNode* node) override;
+    void visitDo(DoNode* node) override;
+    void visitQuote(QuoteNode* node) override;
+
+    // Other keywords
+    void visitEnd(AstNode* node) override;
 
     // Expressions
     void visitCall(CallNode* node) override;

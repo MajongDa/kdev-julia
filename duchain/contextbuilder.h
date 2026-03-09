@@ -45,11 +45,16 @@ protected:
     void visitStructBody(StructNode* node);
     void visitModule(AstNode* node) override;
     void visitModuleBody(AstNode* node);
+    void visitBaremodule(BaremoduleNode* node) override;
+    void visitBaremoduleBody(AstNode* node);
     void visitAbstract(AstNode* node) override;
     void visitAbstractBody(AstNode* node);
     void visitPrimitive(AstNode* node) override;
     void visitPrimitiveBody(AstNode* node);
     void visitBlock(AstNode* node) override;
+    void visitTry(TryNode* node) override;
+    void visitLet(LetNode* node) override;
+    void visitDo(DoNode* node) override;
 
     // For function parameters and body
     void visitFunctionParameters(AstNode* node, FunctionNode* funcNode);

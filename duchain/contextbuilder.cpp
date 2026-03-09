@@ -215,8 +215,15 @@ KDevelop::RangeInRevision ContextBuilder::rangeForArgumentsContext(FunctionNode*
         return argsNode->range();
     }
     
+    AstNode* nameNode = funcNode->functionNameNode();
+    KDevelop::CursorInRevision start = nameNode ? nameNode->range().start : params.first()->range().start;
+    
     AstNode* lastParam = params.last();
-    return lastParam->range();
+    AstNode* lastId = lastParam->kind() == NodeKind::TypeAnnotation 
+        ? lastParam->firstChild() : lastParam;
+    KDevelop::CursorInRevision end = lastId ? lastId->range().end : lastParam->range().end;
+    
+    return KDevelop::RangeInRevision(start, end);
 }
 
 void ContextBuilder::visitStruct(StructNode* node)
@@ -283,6 +290,42 @@ void ContextBuilder::visitModule(AstNode* node)
     JuliaAstDefaultVisitor::visitModule(node);
     
     qCDebug(KDEV_JULIA) << "<<< ContextBuilder::visitModule DONE";
+}
+
+void ContextBuilder::visitBaremodule(BaremoduleNode* node)
+{
+    if (!node) {
+        return;
+    }
+    qCDebug(KDEV_JULIA) << ">>> ContextBuilder::visitBaremodule (traverse only)";
+    JuliaAstDefaultVisitor::visitBaremodule(node);
+    qCDebug(KDEV_JULIA) << "<<< ContextBuilder::visitBaremodule DONE";
+}
+
+void ContextBuilder::visitBaremoduleBody(AstNode* node)
+{
+    if (!node) {
+        return;
+    }
+    qCDebug(KDEV_JULIA) << ">>> ContextBuilder::visitBaremoduleBody (create context)";
+    
+    KDevelop::QualifiedIdentifier moduleId;
+    if (node->parent()) {
+        AstNode* nameNode = node->parent()->firstChild();
+        if (nameNode && nameNode->kind() == NodeKind::Identifier) {
+            moduleId = KDevelop::QualifiedIdentifier(nameNode->text());
+        }
+    }
+    
+    if (node->context) {
+        openContext(node->context);
+    } else {
+        openContext(node, node->range(), KDevelop::DUContext::Namespace, moduleId);
+    }
+    
+    JuliaAstDefaultVisitor::visitBaremodule(static_cast<BaremoduleNode*>(node->parent()));
+    closeContext();
+    qCDebug(KDEV_JULIA) << "<<< ContextBuilder::visitBaremoduleBody DONE";
 }
 
 void ContextBuilder::visitModuleBody(AstNode* node)
@@ -469,6 +512,36 @@ KDevelop::QualifiedIdentifier ContextBuilder::identifierForNode(AstNode* node)
         return KDevelop::QualifiedIdentifier();
     }
     return KDevelop::QualifiedIdentifier(node->text());
+}
+
+void ContextBuilder::visitTry(TryNode* node)
+{
+    if (!node) {
+        return;
+    }
+    qCDebug(KDEV_JULIA) << ">>> ContextBuilder::visitTry";
+    JuliaAstDefaultVisitor::visitTry(node);
+    qCDebug(KDEV_JULIA) << "<<< ContextBuilder::visitTry DONE";
+}
+
+void ContextBuilder::visitLet(LetNode* node)
+{
+    if (!node) {
+        return;
+    }
+    qCDebug(KDEV_JULIA) << ">>> ContextBuilder::visitLet";
+    JuliaAstDefaultVisitor::visitLet(node);
+    qCDebug(KDEV_JULIA) << "<<< ContextBuilder::visitLet DONE";
+}
+
+void ContextBuilder::visitDo(DoNode* node)
+{
+    if (!node) {
+        return;
+    }
+    qCDebug(KDEV_JULIA) << ">>> ContextBuilder::visitDo";
+    JuliaAstDefaultVisitor::visitDo(node);
+    qCDebug(KDEV_JULIA) << "<<< ContextBuilder::visitDo DONE";
 }
 
 }

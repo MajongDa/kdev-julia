@@ -112,12 +112,9 @@ void DeclarationBuilder::visitFunction(FunctionNode* node)
     qCDebug(KDEV_JULIA) << "  Function name:" << name;
     
     if (!name.isEmpty()) {
-        AstNode* nameNode = node->firstChild();
-        if (nameNode && nameNode->kind() == NodeKind::Call) {
-            nameNode = nameNode->firstChild();
-        }
+        AstNode* nameNode = node->functionNameNode();
         
-        auto* decl = openDeclaration<KDevelop::FunctionDeclaration>(nameNode, node);
+        auto* decl = openDeclaration<KDevelop::FunctionDeclaration>(nameNode ? nameNode : node, node);
         qCDebug(KDEV_JULIA) << "  openDeclaration returned:" << decl << "in context:" << currentContext();
         if (decl) {
             qCDebug(KDEV_JULIA) << "  Function declaration created:" << name << "in context:" << currentContext();
@@ -229,6 +226,74 @@ void DeclarationBuilder::visitStruct(StructNode* node)
     visitStructBody(node);
     
     qCDebug(KDEV_JULIA) << "<<< DeclarationBuilder::visitStruct DONE";
+}
+
+void DeclarationBuilder::visitStructBody(StructNode* node)
+{
+    if (!node) {
+        return;
+    }
+    qCDebug(KDEV_JULIA) << ">>> DeclarationBuilder::visitStructBody";
+    
+    AstNode* nameNode = node->firstChild();
+    if (nameNode && nameNode->kind() == NodeKind::Curly) {
+        if (CurlyNode* curly = dynamic_cast<CurlyNode*>(nameNode)) {
+            nameNode = curly->firstChild();
+        }
+    }
+    
+    KDevelop::QualifiedIdentifier structId;
+    if (nameNode && nameNode->kind() == NodeKind::Identifier) {
+        structId = KDevelop::QualifiedIdentifier(nameNode->text());
+    }
+    
+    if (node->context) {
+        openContext(node->context);
+    } else {
+        KDevelop::RangeInRevision range = node->range();
+        openContext(node, range, KDevelop::DUContext::Class, structId);
+    }
+    
+    QList<AstNode*> fields = node->fields();
+    qCDebug(KDEV_JULIA) << "  Processing" << fields.size() << "fields";
+    
+    for (AstNode* field : fields) {
+        if (!field || field->kind() != NodeKind::TypeAnnotation) {
+            continue;
+        }
+        
+        AstNode* idNode = field->firstChild();
+        AstNode* typeNode = field->lastChild();
+        
+        if (!idNode || idNode->kind() != NodeKind::Identifier) {
+            continue;
+        }
+        
+        QString fieldName = idNode->text();
+        qCDebug(KDEV_JULIA) << "    Field:" << fieldName;
+        
+        auto* decl = openDeclaration<KDevelop::Declaration>(idNode, node);
+        if (decl) {
+            decl->setKind(KDevelop::Declaration::Instance);
+            decl->setInSymbolTable(true);
+            
+            if (typeNode) {
+                ExpressionVisitor exprVisitor(currentContext());
+                exprVisitor.visitNode(typeNode);
+                if (exprVisitor.lastType()) {
+                    decl->setType(exprVisitor.lastType());
+                    qCDebug(KDEV_JULIA) << "      Type:" << exprVisitor.lastType()->toString();
+                }
+            }
+            
+            closeDeclaration();
+        }
+    }
+    
+    DeclarationBuilderBase::visitStructBody(node);
+    
+    closeContext();
+    qCDebug(KDEV_JULIA) << "<<< DeclarationBuilder::visitStructBody DONE";
 }
 
 void DeclarationBuilder::visitModule(AstNode* node)
@@ -532,28 +597,49 @@ void DeclarationBuilder::visitAssignment(AssignmentNode* node)
         return;
     }
     
-    // Only handle simple identifiers for now
-    if (target->kind() != NodeKind::Identifier) {
+    // Handle type annotation: a::Bool = true
+    // target is TypeAnnotation node, first child is identifier, last child is type
+    AstNode* identifierNode = target;
+    AstNode* explicitType = nullptr;
+    
+    if (target->kind() == NodeKind::TypeAnnotation) {
+        identifierNode = target->firstChild();  // the 'a' part
+        explicitType = target->lastChild();     // the 'Bool' part
+        qCDebug(KDEV_JULIA) << "  Type annotation detected:" << identifierNode->text();
+    }
+    
+    if (!identifierNode || identifierNode->kind() != NodeKind::Identifier) {
         qCDebug(KDEV_JULIA) << "  Target is not identifier, skipping";
         return;
     }
     
-    // Get type from value using ExpressionVisitor
-    ExpressionVisitor v(currentContext());
-    v.visitNode(value);
+    // Get type - either from explicit annotation or from value inference
+    KDevelop::AbstractType::Ptr declType;
     
-    KDevelop::AbstractType::Ptr valueType = v.lastType();
-    if (!valueType) {
-        qCDebug(KDEV_JULIA) << "  No type found for value, using mixed";
+    if (explicitType) {
+        // Use explicit type from annotation
+        ExpressionVisitor typeVisitor(currentContext());
+        typeVisitor.visitNode(explicitType);
+        declType = typeVisitor.lastType();
+        qCDebug(KDEV_JULIA) << "  Using explicit type:" << (declType ? declType->toString() : QStringLiteral("unknown"));
+    } else {
+        // Infer from value
+        ExpressionVisitor v(currentContext());
+        v.visitNode(value);
+        declType = v.lastType();
+    }
+    
+    if (!declType) {
+        qCDebug(KDEV_JULIA) << "  No type found, using mixed";
         auto* mixedType = new KDevelop::IntegralType(KDevelop::IntegralType::TypeMixed);
-        valueType = KDevelop::AbstractType::Ptr(mixedType);
+        declType = KDevelop::AbstractType::Ptr(mixedType);
     }
     
     // Create declaration for target
-    KDevelop::Declaration* decl = openDeclaration<KDevelop::Declaration>(target, target);
+    KDevelop::Declaration* decl = openDeclaration<KDevelop::Declaration>(identifierNode, target);
     if (decl) {
-        decl->setType(valueType);
-        qCDebug(KDEV_JULIA) << "  Assignment declaration created:" << target->text() << "type:" << valueType->toString();
+        decl->setType(declType);
+        qCDebug(KDEV_JULIA) << "  Assignment declaration created:" << identifierNode->text() << "type:" << declType->toString();
         KDevelop::Declaration* varDecl = decl;
         closeDeclaration();
         // Register in symbol table for navigation to work
@@ -604,6 +690,95 @@ KDevelop::QualifiedIdentifier DeclarationBuilder::identifierForNode(AstNode* nod
         return KDevelop::QualifiedIdentifier(node->text());
     }
     return KDevelop::QualifiedIdentifier();
+}
+
+void DeclarationBuilder::visitReturn(AstNode* node)
+{
+    if (!node) {
+        return;
+    }
+    qCDebug(KDEV_JULIA) << ">>> DeclarationBuilder::visitReturn";
+    
+    KDevelop::Declaration* funcDecl = currentDeclaration();
+    if (!funcDecl || !funcDecl->isFunctionDeclaration()) {
+        qCDebug(KDEV_JULIA) << "Return outside function, skipping";
+        return;
+    }
+    
+    AstNode* valueNode = nullptr;
+    for (AstNode* child : node->children()) {
+        if (child && child->kind() != NodeKind::Return) {
+            valueNode = child;
+            break;
+        }
+    }
+    
+    if (valueNode) {
+        ExpressionVisitor exprVisitor(currentContext());
+        exprVisitor.visitNode(valueNode);
+        KDevelop::AbstractType::Ptr returnType = exprVisitor.lastType();
+        
+        if (returnType && funcDecl->abstractType()) {
+            KDevelop::DUChainWriteLocker lock;
+            if (auto* funcType = dynamic_cast<KDevelop::FunctionType*>(funcDecl->abstractType().data())) {
+                funcType->setReturnType(returnType);
+                qCDebug(KDEV_JULIA) << "Set return type:" << returnType->toString();
+            }
+        }
+    }
+    
+    DeclarationBuilderBase::visitReturn(node);
+    qCDebug(KDEV_JULIA) << "<<< DeclarationBuilder::visitReturn DONE";
+}
+
+void DeclarationBuilder::visitMacro(AstNode* node)
+{
+    if (!node) {
+        return;
+    }
+    qCDebug(KDEV_JULIA) << ">>> DeclarationBuilder::visitMacro";
+    
+    for (AstNode* child : node->children()) {
+        if (!child) continue;
+        
+        if (child->kind() == NodeKind::Identifier) {
+            QString macroName = child->text().trimmed();
+            if (!macroName.isEmpty()) {
+                auto* decl = openDeclaration<KDevelop::Declaration>(child, node);
+                if (decl) {
+                    decl->setKind(KDevelop::Declaration::Instance);
+                    decl->setInSymbolTable(true);
+                    qCDebug(KDEV_JULIA) << "Macro declaration created:" << macroName;
+                    closeDeclaration();
+                }
+            }
+        }
+    }
+    
+    DeclarationBuilderBase::visitMacro(node);
+    qCDebug(KDEV_JULIA) << "<<< DeclarationBuilder::visitMacro DONE";
+}
+
+void DeclarationBuilder::visitMacroCall(AstNode* node)
+{
+    if (!node) {
+        return;
+    }
+    qCDebug(KDEV_JULIA) << ">>> DeclarationBuilder::visitMacroCall";
+    
+    DeclarationBuilderBase::visitMacroCall(node);
+    qCDebug(KDEV_JULIA) << "<<< DeclarationBuilder::visitMacroCall DONE";
+}
+
+void DeclarationBuilder::visitImportPath(AstNode* node)
+{
+    if (!node) {
+        return;
+    }
+    qCDebug(KDEV_JULIA) << ">>> DeclarationBuilder::visitImportPath";
+    
+    DeclarationBuilderBase::visitImportPath(node);
+    qCDebug(KDEV_JULIA) << "<<< DeclarationBuilder::visitImportPath DONE";
 }
 
 }

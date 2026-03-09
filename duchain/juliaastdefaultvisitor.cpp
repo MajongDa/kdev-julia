@@ -55,6 +55,16 @@ void JuliaAstDefaultVisitor::visitModule(AstNode* node)
     }
 }
 
+void JuliaAstDefaultVisitor::visitBaremodule(BaremoduleNode* node)
+{
+    if (!node) return;
+    for (AstNode* child : node->children()) {
+        if (child) {
+            visitNode(child);
+        }
+    }
+}
+
 void JuliaAstDefaultVisitor::visitAbstract(AstNode* node)
 {
     if (!node) return;
@@ -145,7 +155,115 @@ void JuliaAstDefaultVisitor::visitFor(AstNode* node)
     }
 }
 
-void JuliaAstDefaultVisitor::visitTry(AstNode* node)
+void JuliaAstDefaultVisitor::visitTry(TryNode* node)
+{
+    if (!node) return;
+    visitNode(node->tryBody());
+    visitNode(node->catchVariable());
+    visitNode(node->catchBody());
+    visitNode(node->finallyBody());
+}
+
+void JuliaAstDefaultVisitor::visitCatch(AstNode* node)
+{
+    if (!node) return;
+    for (AstNode* child : node->children()) {
+        if (child) {
+            visitNode(child);
+        }
+    }
+}
+
+void JuliaAstDefaultVisitor::visitFinally(AstNode* node)
+{
+    if (!node) return;
+    for (AstNode* child : node->children()) {
+        if (child) {
+            visitNode(child);
+        }
+    }
+}
+
+void JuliaAstDefaultVisitor::visitElseIf(AstNode* node)
+{
+    if (!node) return;
+    for (AstNode* child : node->children()) {
+        if (child) {
+            visitNode(child);
+        }
+    }
+}
+
+void JuliaAstDefaultVisitor::visitElse(AstNode* node)
+{
+    if (!node) return;
+    for (AstNode* child : node->children()) {
+        if (child) {
+            visitNode(child);
+        }
+    }
+}
+
+void JuliaAstDefaultVisitor::visitConst(ConstNode* node)
+{
+    if (!node) return;
+    visitNode(node->target());
+    visitNode(node->value());
+}
+
+void JuliaAstDefaultVisitor::visitGlobal(GlobalNode* node)
+{
+    if (!node) return;
+    for (AstNode* child : node->identifiers()) {
+        if (child) {
+            visitNode(child);
+        }
+    }
+}
+
+void JuliaAstDefaultVisitor::visitLocal(LocalNode* node)
+{
+    if (!node) return;
+    for (AstNode* child : node->identifiers()) {
+        if (child) {
+            visitNode(child);
+        }
+    }
+}
+
+void JuliaAstDefaultVisitor::visitLet(LetNode* node)
+{
+    if (!node) return;
+    for (AstNode* child : node->bindings()) {
+        if (child) {
+            visitNode(child);
+        }
+    }
+    visitNode(node->body());
+}
+
+void JuliaAstDefaultVisitor::visitDo(DoNode* node)
+{
+    if (!node) return;
+    for (AstNode* child : node->arguments()) {
+        if (child) {
+            visitNode(child);
+        }
+    }
+    visitNode(node->body());
+}
+
+void JuliaAstDefaultVisitor::visitQuote(QuoteNode* node)
+{
+    if (!node) return;
+    for (AstNode* child : node->body()) {
+        if (child) {
+            visitNode(child);
+        }
+    }
+}
+
+void JuliaAstDefaultVisitor::visitEnd(AstNode* node)
 {
     if (!node) return;
     for (AstNode* child : node->children()) {
