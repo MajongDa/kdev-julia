@@ -55,7 +55,7 @@ void AstVisitor::visitNode(AstNode* node)
             visitMacroCall(node);
             break;
         case NodeKind::Return:
-            visitReturn(node);
+            visitReturn(static_cast<ReturnNode*>(node));
             break;
         case NodeKind::If:
             visitIf(node);
@@ -67,10 +67,10 @@ void AstVisitor::visitNode(AstNode* node)
             visitElse(node);
             break;
         case NodeKind::While:
-            visitWhile(node);
+            visitWhile(static_cast<WhileNode*>(node));
             break;
         case NodeKind::For:
-            visitFor(node);
+            visitFor(static_cast<ForNode*>(node));
             break;
         case NodeKind::Try:
             visitTry(static_cast<TryNode*>(node));
@@ -101,9 +101,6 @@ void AstVisitor::visitNode(AstNode* node)
             break;
         case NodeKind::Where:
             visitWhere(node);
-            break;
-        case NodeKind::Parameters:
-            visitParameters(node);
             break;
         case NodeKind::String:
             visitString(node);

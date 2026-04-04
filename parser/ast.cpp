@@ -68,6 +68,15 @@ NodeKind stringToNodeKind(const QString& kindStr)
         {QStringLiteral("do"), NodeKind::Do},
         {QStringLiteral("quote"), NodeKind::Quote},
         {QStringLiteral("end"), NodeKind::End},
+        // Contextual keywords
+        {QStringLiteral("abstract"), NodeKind::Abstract},
+        {QStringLiteral("as"), NodeKind::Identifier},
+        {QStringLiteral("mutable"), NodeKind::Identifier},
+        {QStringLiteral("outer"), NodeKind::Identifier},
+        {QStringLiteral("primitive"), NodeKind::Primitive},
+        {QStringLiteral("public"), NodeKind::Identifier},
+        {QStringLiteral("var"), NodeKind::Identifier},
+        {QStringLiteral("type"), NodeKind::Identifier},
         // Legacy mappings (for compatibility)
         {QStringLiteral("begin"), NodeKind::Block},
     };
@@ -307,12 +316,12 @@ void AstNode::accept(AstVisitor* visitor)
         case NodeKind::Primitive: visitor->visitPrimitive(this); break;
         case NodeKind::Macro: visitor->visitMacroCall(this); break;
         case NodeKind::MacroCall: visitor->visitMacroCall(this); break;
-        case NodeKind::Return: visitor->visitReturn(this); break;
+        case NodeKind::Return: visitor->visitReturn(static_cast<ReturnNode*>(this)); break;
         case NodeKind::If: visitor->visitIf(this); break;
         case NodeKind::ElseIf: visitor->visitElseIf(this); break;
         case NodeKind::Else: visitor->visitElse(this); break;
-        case NodeKind::While: visitor->visitWhile(this); break;
-        case NodeKind::For: visitor->visitFor(this); break;
+        case NodeKind::While: visitor->visitWhile(static_cast<WhileNode*>(this)); break;
+        case NodeKind::For: visitor->visitFor(static_cast<ForNode*>(this)); break;
         case NodeKind::Try: visitor->visitTry(static_cast<TryNode*>(this)); break;
         case NodeKind::Catch: visitor->visitCatch(this); break;
         case NodeKind::Finally: visitor->visitFinally(this); break;
@@ -321,7 +330,6 @@ void AstNode::accept(AstVisitor* visitor)
         case NodeKind::Call: visitor->visitCall(static_cast<CallNode*>(this)); break;
         case NodeKind::Curly: visitor->visitCurly(static_cast<CurlyNode*>(this)); break;
         case NodeKind::Where: visitor->visitWhere(this); break;
-        case NodeKind::Parameters: visitor->visitParameters(this); break;
         case NodeKind::Identifier: visitor->visitIdentifier(this); break;
         case NodeKind::String: visitor->visitString(this); break;
         case NodeKind::Float: visitor->visitFloat(this); break;
@@ -360,10 +368,14 @@ void AstNode::accept(AstVisitor* visitor)
         case NodeKind::Newline: visitor->visitNewline(this); break;
         case NodeKind::Error: visitor->visitError(this); break;
         case NodeKind::Unknown: visitor->visitUnknown(this); break;
+        default:
+            // Handle any unhandled node kinds by visiting as generic node
+            visitor->visitNode(this);
+            break;
     }
 }
 
-QString AstNode::dump(int) const
+QString AstNode::dump() const
 {
     QString result = nodeKindToString(m_kind);
     
@@ -382,7 +394,7 @@ QString AstNode::dump(int) const
     result += QLatin1String("\n");
     
     for (AstNode* child : m_children) {
-        result += child->dump(0);
+        result += child->dump();
     }
     
     return result;
@@ -444,6 +456,9 @@ AstNode* AstNode::fromJson(const QJsonObject& json, AstNode* parent)
             break;
         case NodeKind::Array:
             node = new ArrayNode(text, range);
+            break;
+        case NodeKind::Parameters:
+            node = new ParametersNode(range);
             break;
         case NodeKind::Try:
             node = new TryNode(range);
@@ -651,7 +666,9 @@ AstNode* FunctionNode::functionNameNode() const
     return nullptr;
 }
 
-AstNode* FunctionNode::arguments() const
+// callNode() returns the Call node representing the function signature (name + positional args)
+// This is NOT a ParametersNode - use parametersNode() for that
+AstNode* FunctionNode::callNode() const
 {
     if (children().isEmpty()) return nullptr;
     
@@ -745,7 +762,7 @@ QList<AstNode*> FunctionNode::parameters() const
 {
     QList<AstNode*> params;
     
-    AstNode* argsNode = arguments();
+    AstNode* argsNode = callNode();
     if (!argsNode) return params;
     
     // Case 1: argsNode is a Call (no return type, no where)
@@ -806,14 +823,314 @@ int FunctionNode::argumentCount() const
     return parameters().size();
 }
 
-QString FunctionNode::dump(int) const
+QString FunctionNode::dump() const
 {
     QString result = QLatin1String("Function: ") + text() + QLatin1String("\n");
     
     for (AstNode* child : children()) {
-        result += child->dump(0);
+        result += child->dump();
     }
     
+    return result;
+}
+
+FunctionDefinitionAst::FunctionDefinitionAst(const QString& name, const KDevelop::RangeInRevision& range)
+    : AstNode(NodeKind::Function, name, range)
+{
+    setIsLeaf(false);
+}
+
+QString FunctionDefinitionAst::functionName() const
+{
+    if (children().isEmpty()) return QString();
+    AstNode* nameNode = firstChild();
+    return nameNode ? nameNode->text() : QString();
+}
+
+AstNode* FunctionDefinitionAst::functionNameNode() const
+{
+    return firstChild();
+}
+
+AstNode* FunctionDefinitionAst::callNode() const
+{
+    QList<AstNode*> kids = children();
+    return kids.size() > 1 ? kids[1] : nullptr;
+}
+
+AstNode* FunctionDefinitionAst::body() const
+{
+    return lastChild();
+}
+
+AstNode* FunctionDefinitionAst::returnType() const
+{
+    return nullptr;
+}
+
+bool FunctionDefinitionAst::hasReturnType() const
+{
+    return false;
+}
+
+int FunctionDefinitionAst::argumentCount() const
+{
+    return parameters().size();
+}
+
+QList<AstNode*> FunctionDefinitionAst::parameters() const
+{
+    QList<AstNode*> result;
+    AstNode* call = callNode();
+    if (!call) return result;
+    for (AstNode* child : call->children()) {
+        if (child && child->kind() != NodeKind::Identifier) {
+            result.append(child);
+        }
+    }
+    return result;
+}
+
+QList<AstNode*> FunctionDefinitionAst::typeParameters() const
+{
+    return QList<AstNode*>();
+}
+
+QString FunctionDefinitionAst::dump() const
+{
+    return QStringLiteral("FunctionDefinitionAst: ") + functionName() + QStringLiteral("\n");
+}
+
+ReturnValueAst::ReturnValueAst(const KDevelop::RangeInRevision& range)
+    : AstNode(NodeKind::Return, QString(), range)
+{
+    setIsLeaf(false);
+}
+
+AstNode* ReturnValueAst::value() const
+{
+    return firstChild();
+}
+
+QString ReturnValueAst::dump() const
+{
+    QString result = QStringLiteral("ReturnValue\n");
+    if (value()) {
+        result += value()->dump();
+    }
+    return result;
+}
+
+NameReferenceAst::NameReferenceAst(const QString& name, const KDevelop::RangeInRevision& range)
+    : AstNode(NodeKind::Identifier, name, range), m_context(Context::Load)
+{
+    setIsLeaf(true);
+}
+
+QString NameReferenceAst::identifier() const
+{
+    return text();
+}
+
+NameReferenceAst::Context NameReferenceAst::context() const
+{
+    return m_context;
+}
+
+void NameReferenceAst::setContext(Context c)
+{
+    m_context = c;
+}
+
+QString NameReferenceAst::dump() const
+{
+    QString ctxStr = (m_context == Context::Load) ? QStringLiteral("Load") : QStringLiteral("Store");
+    return QStringLiteral("NameReference: ") + text() + QStringLiteral(" (") + ctxStr + QStringLiteral(")\n");
+}
+
+AssignmentValueAst::AssignmentValueAst(const KDevelop::RangeInRevision& range)
+    : AstNode(NodeKind::Assignment, QString(), range)
+{
+    setIsLeaf(false);
+}
+
+AstNode* AssignmentValueAst::leftHandSide() const
+{
+    return firstChild();
+}
+
+AstNode* AssignmentValueAst::rightHandSide() const
+{
+    QList<AstNode*> kids = children();
+    return kids.size() > 1 ? kids[1] : nullptr;
+}
+
+QString AssignmentValueAst::dump() const
+{
+    QString result = QStringLiteral("AssignmentValue\n");
+    if (leftHandSide()) {
+        result += leftHandSide()->dump();
+    }
+    if (rightHandSide()) {
+        result += rightHandSide()->dump();
+    }
+    return result;
+}
+
+BlockAst::BlockAst(const KDevelop::RangeInRevision& range)
+    : AstNode(NodeKind::Block, QString(), range)
+{
+    setIsLeaf(false);
+}
+
+QList<AstNode*> BlockAst::statements() const
+{
+    return children();
+}
+
+QString BlockAst::dump() const
+{
+    QString result = QStringLiteral("BlockAst\n");
+    for (AstNode* stmt : statements()) {
+        result += stmt->dump();
+    }
+    return result;
+}
+
+IfBranchAst::IfBranchAst(const KDevelop::RangeInRevision& range)
+    : AstNode(NodeKind::If, QString(), range)
+{
+    setIsLeaf(false);
+}
+
+AstNode* IfBranchAst::condition() const
+{
+    return firstChild();
+}
+
+AstNode* IfBranchAst::thenBranch() const
+{
+    QList<AstNode*> kids = children();
+    return kids.size() > 1 ? kids[1] : nullptr;
+}
+
+AstNode* IfBranchAst::elseBranch() const
+{
+    return lastChild();
+}
+
+QList<AstNode*> IfBranchAst::elseifBranches() const
+{
+    QList<AstNode*> result;
+    QList<AstNode*> kids = children();
+    for (int i = 2; i < kids.size() - 1; ++i) {
+        result.append(kids[i]);
+    }
+    return result;
+}
+
+QString IfBranchAst::dump() const
+{
+    QString result = QStringLiteral("IfBranchAst\n");
+    if (condition()) {
+        result += condition()->dump();
+    }
+    if (thenBranch()) {
+        result += thenBranch()->dump();
+    }
+    return result;
+}
+
+WhileLoopAst::WhileLoopAst(const KDevelop::RangeInRevision& range)
+    : AstNode(NodeKind::While, QString(), range)
+{
+    setIsLeaf(false);
+}
+
+AstNode* WhileLoopAst::condition() const
+{
+    return firstChild();
+}
+
+AstNode* WhileLoopAst::body() const
+{
+    return lastChild();
+}
+
+QString WhileLoopAst::dump() const
+{
+    QString result = QStringLiteral("WhileLoopAst\n");
+    if (condition()) {
+        result += condition()->dump();
+    }
+    if (body()) {
+        result += body()->dump();
+    }
+    return result;
+}
+
+ForLoopAst::ForLoopAst(const KDevelop::RangeInRevision& range)
+    : AstNode(NodeKind::For, QString(), range)
+{
+    setIsLeaf(false);
+}
+
+AstNode* ForLoopAst::iterator() const
+{
+    return firstChild();
+}
+
+AstNode* ForLoopAst::body() const
+{
+    return lastChild();
+}
+
+QString ForLoopAst::dump() const
+{
+    QString result = QStringLiteral("ForLoopAst\n");
+    if (iterator()) {
+        result += iterator()->dump();
+    }
+    if (body()) {
+        result += body()->dump();
+    }
+    return result;
+}
+
+TryCatchAst::TryCatchAst(const KDevelop::RangeInRevision& range)
+    : AstNode(NodeKind::Try, QString(), range)
+{
+    setIsLeaf(false);
+}
+
+AstNode* TryCatchAst::tryBody() const
+{
+    return firstChild();
+}
+
+AstNode* TryCatchAst::catchVariable() const
+{
+    QList<AstNode*> kids = children();
+    return kids.size() > 1 ? kids[1] : nullptr;
+}
+
+AstNode* TryCatchAst::catchBody() const
+{
+    QList<AstNode*> kids = children();
+    return kids.size() > 2 ? kids[2] : nullptr;
+}
+
+AstNode* TryCatchAst::finallyBody() const
+{
+    return lastChild();
+}
+
+QString TryCatchAst::dump() const
+{
+    QString result = QStringLiteral("TryCatchAst\n");
+    if (tryBody()) {
+        result += tryBody()->dump();
+    }
     return result;
 }
 
@@ -857,10 +1174,9 @@ QList<AstNode*> StructNode::supertypes() const
     return result;
 }
 
-QString StructNode::dump(int indent) const
+QString StructNode::dump() const
 {
-    QString indentStr = QString(QLatin1Char(' ')).repeated(indent * 2);
-    QString result = indentStr + QLatin1String("Struct");
+    QString result = QLatin1String("Struct");
     
     QString name = structName();
     if (!name.isEmpty()) {
@@ -870,7 +1186,7 @@ QString StructNode::dump(int indent) const
     result += QLatin1String("\n");
     
     for (AstNode* child : children()) {
-        result += child->dump(indent + 1);
+        result += child->dump();
     }
     
     return result;
@@ -921,10 +1237,9 @@ bool CallNode::isMacroCall() const
     return false;
 }
 
-QString CallNode::dump(int indent) const
+QString CallNode::dump() const
 {
-    QString indentStr = QString(QLatin1Char(' ')).repeated(indent * 2);
-    QString result = indentStr + QLatin1String("Call");
+    QString result = QLatin1String("Call");
     
     QString name = functionName();
     if (!name.isEmpty()) {
@@ -934,7 +1249,7 @@ QString CallNode::dump(int indent) const
     result += QStringLiteral(" (%1 args)\n").arg(argumentCount());
     
     for (AstNode* child : children()) {
-        result += child->dump(indent + 1);
+        result += child->dump();
     }
     
     return result;
@@ -974,10 +1289,9 @@ int CurlyNode::argumentCount() const
     return qMax(0, children().size() - 1);
 }
 
-QString CurlyNode::dump(int indent) const
+QString CurlyNode::dump() const
 {
-    QString indentStr = QString(QLatin1Char(' ')).repeated(indent * 2);
-    QString result = indentStr + QLatin1String("Curly");
+    QString result = QLatin1String("Curly");
     
     QString name = functionName();
     if (!name.isEmpty()) {
@@ -987,7 +1301,7 @@ QString CurlyNode::dump(int indent) const
     result += QStringLiteral(" (%1 args)\n").arg(argumentCount());
     
     for (AstNode* child : children()) {
-        result += child->dump(indent + 1);
+        result += child->dump();
     }
     
     return result;
@@ -1011,13 +1325,12 @@ AstNode* AssignmentNode::rightHandSide() const
     return children().at(1);
 }
 
-QString AssignmentNode::dump(int indent) const
+QString AssignmentNode::dump() const
 {
-    QString indentStr = QString(QLatin1Char(' ')).repeated(indent * 2);
-    QString result = indentStr + QLatin1String("Assignment\n");
+    QString result = QLatin1String("Assignment\n");
     
     for (AstNode* child : children()) {
-        result += child->dump(indent + 1);
+        result += child->dump();
     }
     
     return result;
@@ -1033,10 +1346,9 @@ QString IdentifierNode::identifier() const
     return text();
 }
 
-QString IdentifierNode::dump(int indent) const
+QString IdentifierNode::dump() const
 {
-    QString indentStr = QString(QLatin1Char(' ')).repeated(indent * 2);
-    return indentStr + QLatin1String("Identifier: ") + text() + QLatin1String("\n");
+    return QLatin1String("Identifier: ") + text() + QLatin1String("\n");
 }
 
 StringNode::StringNode(const QString& value, const KDevelop::RangeInRevision& range)
@@ -1049,10 +1361,9 @@ QString StringNode::value() const
     return text();
 }
 
-QString StringNode::dump(int indent) const
+QString StringNode::dump() const
 {
-    QString indentStr = QString(QLatin1Char(' ')).repeated(indent * 2);
-    return indentStr + QLatin1String("String: \"") + text() + QLatin1String("\"\n");
+    return QLatin1String("String: \"") + text() + QLatin1String("\"\n");
 }
 
 NumberNode::NumberNode(const QString& value, bool isFloat, const KDevelop::RangeInRevision& range)
@@ -1086,10 +1397,9 @@ qint64 NumberNode::asInteger() const
     return text().toLongLong();
 }
 
-QString NumberNode::dump(int indent) const
+QString NumberNode::dump() const
 {
-    QString indentStr = QString(QLatin1Char(' ')).repeated(indent * 2);
-    return indentStr + (m_isFloat ? QLatin1String("Float: ") : QLatin1String("Integer: ")) + text() + QLatin1String("\n");
+    return (m_isFloat ? QLatin1String("Float: ") : QLatin1String("Integer: ")) + text() + QLatin1String("\n");
 }
 
 TupleNode::TupleNode(const QString& name, const KDevelop::RangeInRevision& range)
@@ -1102,13 +1412,12 @@ QList<AstNode*> TupleNode::elements() const
     return children();
 }
 
-QString TupleNode::dump(int indent) const
+QString TupleNode::dump() const
 {
-    QString indentStr = QString(QLatin1Char(' ')).repeated(indent * 2);
-    QString result = indentStr + QLatin1String("Tuple\n");
+    QString result = QLatin1String("Tuple\n");
     
     for (AstNode* child : children()) {
-        result += child->dump(indent + 1);
+        result += child->dump();
     }
     
     return result;
@@ -1124,13 +1433,34 @@ QList<AstNode*> ArrayNode::elements() const
     return children();
 }
 
-QString ArrayNode::dump(int indent) const
+QString ArrayNode::dump() const
 {
-    QString indentStr = QString(QLatin1Char(' ')).repeated(indent * 2);
-    QString result = indentStr + QLatin1String("Array\n");
+    QString result = QLatin1String("Array\n");
     
     for (AstNode* child : children()) {
-        result += child->dump(indent + 1);
+        result += child->dump();
+    }
+    
+    return result;
+}
+
+ParametersNode::ParametersNode(const KDevelop::RangeInRevision& range)
+    : AstNode(NodeKind::Parameters, QString(), range)
+{
+    setIsLeaf(false);
+}
+
+QList<AstNode*> ParametersNode::parameters() const
+{
+    return children();
+}
+
+QString ParametersNode::dump() const
+{
+    QString result = QLatin1String("Parameters\n");
+    
+    for (AstNode* child : children()) {
+        result += child->dump();
     }
     
     return result;
@@ -1183,12 +1513,11 @@ AstNode* TryNode::finallyBody() const
     return nullptr;
 }
 
-QString TryNode::dump(int indent) const
+QString TryNode::dump() const
 {
-    QString indentStr = QString(QLatin1Char(' ')).repeated(indent * 2);
-    QString result = indentStr + QLatin1String("Try\n");
+    QString result = QLatin1String("Try\n");
     for (AstNode* child : children()) {
-        result += child->dump(indent + 1);
+        result += child->dump();
     }
     return result;
 }
@@ -1208,12 +1537,11 @@ AstNode* ConstNode::value() const
     return children().size() > 1 ? children().at(1) : nullptr;
 }
 
-QString ConstNode::dump(int indent) const
+QString ConstNode::dump() const
 {
-    QString indentStr = QString(QLatin1Char(' ')).repeated(indent * 2);
-    QString result = indentStr + QLatin1String("Const\n");
+    QString result = QLatin1String("Const\n");
     for (AstNode* child : children()) {
-        result += child->dump(indent + 1);
+        result += child->dump();
     }
     return result;
 }
@@ -1244,12 +1572,11 @@ AstNode* LetNode::body() const
     return nullptr;
 }
 
-QString LetNode::dump(int indent) const
+QString LetNode::dump() const
 {
-    QString indentStr = QString(QLatin1Char(' ')).repeated(indent * 2);
-    QString result = indentStr + QLatin1String("Let\n");
+    QString result = QLatin1String("Let\n");
     for (AstNode* child : children()) {
-        result += child->dump(indent + 1);
+        result += child->dump();
     }
     return result;
 }
@@ -1280,12 +1607,11 @@ AstNode* DoNode::body() const
     return nullptr;
 }
 
-QString DoNode::dump(int indent) const
+QString DoNode::dump() const
 {
-    QString indentStr = QString(QLatin1Char(' ')).repeated(indent * 2);
-    QString result = indentStr + QLatin1String("Do\n");
+    QString result = QLatin1String("Do\n");
     for (AstNode* child : children()) {
-        result += child->dump(indent + 1);
+        result += child->dump();
     }
     return result;
 }
@@ -1300,12 +1626,11 @@ QList<AstNode*> QuoteNode::body() const
     return children();
 }
 
-QString QuoteNode::dump(int indent) const
+QString QuoteNode::dump() const
 {
-    QString indentStr = QString(QLatin1Char(' ')).repeated(indent * 2);
-    QString result = indentStr + QLatin1String("Quote\n");
+    QString result = QLatin1String("Quote\n");
     for (AstNode* child : children()) {
-        result += child->dump(indent + 1);
+        result += child->dump();
     }
     return result;
 }
@@ -1320,12 +1645,11 @@ QList<AstNode*> GlobalNode::identifiers() const
     return children();
 }
 
-QString GlobalNode::dump(int indent) const
+QString GlobalNode::dump() const
 {
-    QString indentStr = QString(QLatin1Char(' ')).repeated(indent * 2);
-    QString result = indentStr + QLatin1String("Global\n");
+    QString result = QLatin1String("Global\n");
     for (AstNode* child : children()) {
-        result += child->dump(indent + 1);
+        result += child->dump();
     }
     return result;
 }
@@ -1340,12 +1664,11 @@ QList<AstNode*> LocalNode::identifiers() const
     return children();
 }
 
-QString LocalNode::dump(int indent) const
+QString LocalNode::dump() const
 {
-    QString indentStr = QString(QLatin1Char(' ')).repeated(indent * 2);
-    QString result = indentStr + QLatin1String("Local\n");
+    QString result = QLatin1String("Local\n");
     for (AstNode* child : children()) {
-        result += child->dump(indent + 1);
+        result += child->dump();
     }
     return result;
 }
@@ -1365,12 +1688,11 @@ AstNode* BaremoduleNode::body() const
     return firstChild();
 }
 
-QString BaremoduleNode::dump(int indent) const
+QString BaremoduleNode::dump() const
 {
-    QString indentStr = QString(QLatin1Char(' ')).repeated(indent * 2);
-    QString result = indentStr + QLatin1String("Baremodule: ") + text() + QLatin1String("\n");
+    QString result = QLatin1String("Baremodule: ") + text() + QLatin1String("\n");
     for (AstNode* child : children()) {
-        result += child->dump(indent + 1);
+        result += child->dump();
     }
     return result;
 }
@@ -1390,12 +1712,11 @@ AstNode* ModuleNode::body() const
     return firstChild();
 }
 
-QString ModuleNode::dump(int indent) const
+QString ModuleNode::dump() const
 {
-    QString indentStr = QString(QLatin1Char(' ')).repeated(indent * 2);
-    QString result = indentStr + QLatin1String("Module: ") + text() + QLatin1String("\n");
+    QString result = QLatin1String("Module: ") + text() + QLatin1String("\n");
     for (AstNode* child : children()) {
-        result += child->dump(indent + 1);
+        result += child->dump();
     }
     return result;
 }
@@ -1410,12 +1731,11 @@ AstNode* BeginNode::body() const
     return firstChild();
 }
 
-QString BeginNode::dump(int indent) const
+QString BeginNode::dump() const
 {
-    QString indentStr = QString(QLatin1Char(' ')).repeated(indent * 2);
-    QString result = indentStr + QLatin1String("Begin\n");
+    QString result = QLatin1String("Begin\n");
     for (AstNode* child : children()) {
-        result += child->dump(indent + 1);
+        result += child->dump();
     }
     return result;
 }
@@ -1425,10 +1745,9 @@ BreakNode::BreakNode(const KDevelop::RangeInRevision& range)
 {
 }
 
-QString BreakNode::dump(int indent) const
+QString BreakNode::dump() const
 {
-    QString indentStr = QString(QLatin1Char(' ')).repeated(indent * 2);
-    return indentStr + QLatin1String("Break\n");
+    return QLatin1String("Break\n");
 }
 
 ContinueNode::ContinueNode(const KDevelop::RangeInRevision& range)
@@ -1436,10 +1755,9 @@ ContinueNode::ContinueNode(const KDevelop::RangeInRevision& range)
 {
 }
 
-QString ContinueNode::dump(int indent) const
+QString ContinueNode::dump() const
 {
-    QString indentStr = QString(QLatin1Char(' ')).repeated(indent * 2);
-    return indentStr + QLatin1String("Continue\n");
+    return QLatin1String("Continue\n");
 }
 
 ReturnNode::ReturnNode(const KDevelop::RangeInRevision& range)
@@ -1452,12 +1770,11 @@ AstNode* ReturnNode::value() const
     return firstChild();
 }
 
-QString ReturnNode::dump(int indent) const
+QString ReturnNode::dump() const
 {
-    QString indentStr = QString(QLatin1Char(' ')).repeated(indent * 2);
-    QString result = indentStr + QLatin1String("Return\n");
+    QString result = QLatin1String("Return\n");
     for (AstNode* child : children()) {
-        result += child->dump(indent + 1);
+        result += child->dump();
     }
     return result;
 }
@@ -1477,12 +1794,11 @@ AstNode* WhileNode::body() const
     return children().size() > 1 ? children().at(1) : nullptr;
 }
 
-QString WhileNode::dump(int indent) const
+QString WhileNode::dump() const
 {
-    QString indentStr = QString(QLatin1Char(' ')).repeated(indent * 2);
-    QString result = indentStr + QLatin1String("While\n");
+    QString result = QLatin1String("While\n");
     for (AstNode* child : children()) {
-        result += child->dump(indent + 1);
+        result += child->dump();
     }
     return result;
 }
@@ -1502,12 +1818,11 @@ AstNode* ForNode::body() const
     return children().size() > 1 ? children().at(1) : nullptr;
 }
 
-QString ForNode::dump(int indent) const
+QString ForNode::dump() const
 {
-    QString indentStr = QString(QLatin1Char(' ')).repeated(indent * 2);
-    QString result = indentStr + QLatin1String("For\n");
+    QString result = QLatin1String("For\n");
     for (AstNode* child : children()) {
-        result += child->dump(indent + 1);
+        result += child->dump();
     }
     return result;
 }
@@ -1548,12 +1863,11 @@ QList<AstNode*> IfNode::elseifBranches() const
     return result;
 }
 
-QString IfNode::dump(int indent) const
+QString IfNode::dump() const
 {
-    QString indentStr = QString(QLatin1Char(' ')).repeated(indent * 2);
-    QString result = indentStr + QLatin1String("If\n");
+    QString result = QLatin1String("If\n");
     for (AstNode* child : children()) {
-        result += child->dump(indent + 1);
+        result += child->dump();
     }
     return result;
 }
@@ -1573,12 +1887,11 @@ AstNode* ElseIfNode::body() const
     return children().size() > 1 ? children().at(1) : nullptr;
 }
 
-QString ElseIfNode::dump(int indent) const
+QString ElseIfNode::dump() const
 {
-    QString indentStr = QString(QLatin1Char(' ')).repeated(indent * 2);
-    QString result = indentStr + QLatin1String("ElseIf\n");
+    QString result = QLatin1String("ElseIf\n");
     for (AstNode* child : children()) {
-        result += child->dump(indent + 1);
+        result += child->dump();
     }
     return result;
 }
@@ -1593,12 +1906,11 @@ AstNode* ElseNode::body() const
     return firstChild();
 }
 
-QString ElseNode::dump(int indent) const
+QString ElseNode::dump() const
 {
-    QString indentStr = QString(QLatin1Char(' ')).repeated(indent * 2);
-    QString result = indentStr + QLatin1String("Else\n");
+    QString result = QLatin1String("Else\n");
     for (AstNode* child : children()) {
-        result += child->dump(indent + 1);
+        result += child->dump();
     }
     return result;
 }
@@ -1608,10 +1920,9 @@ EndNode::EndNode(const KDevelop::RangeInRevision& range)
 {
 }
 
-QString EndNode::dump(int indent) const
+QString EndNode::dump() const
 {
-    QString indentStr = QString(QLatin1Char(' ')).repeated(indent * 2);
-    return indentStr + QLatin1String("End\n");
+    return QLatin1String("End\n");
 }
 
 ExportNode::ExportNode(const KDevelop::RangeInRevision& range)
@@ -1624,12 +1935,11 @@ QList<AstNode*> ExportNode::identifiers() const
     return children();
 }
 
-QString ExportNode::dump(int indent) const
+QString ExportNode::dump() const
 {
-    QString indentStr = QString(QLatin1Char(' ')).repeated(indent * 2);
-    QString result = indentStr + QLatin1String("Export\n");
+    QString result = QLatin1String("Export\n");
     for (AstNode* child : children()) {
-        result += child->dump(indent + 1);
+        result += child->dump();
     }
     return result;
 }
@@ -1644,12 +1954,11 @@ QList<AstNode*> ImportNode::importPaths() const
     return children();
 }
 
-QString ImportNode::dump(int indent) const
+QString ImportNode::dump() const
 {
-    QString indentStr = QString(QLatin1Char(' ')).repeated(indent * 2);
-    QString result = indentStr + QLatin1String("Import\n");
+    QString result = QLatin1String("Import\n");
     for (AstNode* child : children()) {
-        result += child->dump(indent + 1);
+        result += child->dump();
     }
     return result;
 }
@@ -1684,12 +1993,11 @@ AstNode* MacroNode::body() const
     return nullptr;
 }
 
-QString MacroNode::dump(int indent) const
+QString MacroNode::dump() const
 {
-    QString indentStr = QString(QLatin1Char(' ')).repeated(indent * 2);
-    QString result = indentStr + QLatin1String("Macro: ") + text() + QLatin1String("\n");
+    QString result = QLatin1String("Macro: ") + text() + QLatin1String("\n");
     for (AstNode* child : children()) {
-        result += child->dump(indent + 1);
+        result += child->dump();
     }
     return result;
 }
@@ -1709,12 +2017,11 @@ AstNode* AbstractNode::supertype() const
     return firstChild();
 }
 
-QString AbstractNode::dump(int indent) const
+QString AbstractNode::dump() const
 {
-    QString indentStr = QString(QLatin1Char(' ')).repeated(indent * 2);
-    QString result = indentStr + QLatin1String("Abstract: ") + text() + QLatin1String("\n");
+    QString result = QLatin1String("Abstract: ") + text() + QLatin1String("\n");
     for (AstNode* child : children()) {
-        result += child->dump(indent + 1);
+        result += child->dump();
     }
     return result;
 }
@@ -1734,12 +2041,11 @@ AstNode* PrimitiveNode::underlyingType() const
     return firstChild();
 }
 
-QString PrimitiveNode::dump(int indent) const
+QString PrimitiveNode::dump() const
 {
-    QString indentStr = QString(QLatin1Char(' ')).repeated(indent * 2);
-    QString result = indentStr + QLatin1String("Primitive: ") + text() + QLatin1String("\n");
+    QString result = QLatin1String("Primitive: ") + text() + QLatin1String("\n");
     for (AstNode* child : children()) {
-        result += child->dump(indent + 1);
+        result += child->dump();
     }
     return result;
 }
@@ -1759,12 +2065,11 @@ AstNode* CatchNode::body() const
     return children().size() > 1 ? children().at(1) : nullptr;
 }
 
-QString CatchNode::dump(int indent) const
+QString CatchNode::dump() const
 {
-    QString indentStr = QString(QLatin1Char(' ')).repeated(indent * 2);
-    QString result = indentStr + QLatin1String("Catch\n");
+    QString result = QLatin1String("Catch\n");
     for (AstNode* child : children()) {
-        result += child->dump(indent + 1);
+        result += child->dump();
     }
     return result;
 }
@@ -1779,12 +2084,11 @@ AstNode* FinallyNode::body() const
     return firstChild();
 }
 
-QString FinallyNode::dump(int indent) const
+QString FinallyNode::dump() const
 {
-    QString indentStr = QString(QLatin1Char(' ')).repeated(indent * 2);
-    QString result = indentStr + QLatin1String("Finally\n");
+    QString result = QLatin1String("Finally\n");
     for (AstNode* child : children()) {
-        result += child->dump(indent + 1);
+        result += child->dump();
     }
     return result;
 }
@@ -1804,12 +2108,11 @@ AstNode* AsNode::alias() const
     return children().size() > 1 ? children().at(1) : nullptr;
 }
 
-QString AsNode::dump(int indent) const
+QString AsNode::dump() const
 {
-    QString indentStr = QString(QLatin1Char(' ')).repeated(indent * 2);
-    QString result = indentStr + QLatin1String("As\n");
+    QString result = QLatin1String("As\n");
     for (AstNode* child : children()) {
-        result += child->dump(indent + 1);
+        result += child->dump();
     }
     return result;
 }
@@ -1824,12 +2127,11 @@ AstNode* DocNode::document() const
     return firstChild();
 }
 
-QString DocNode::dump(int indent) const
+QString DocNode::dump() const
 {
-    QString indentStr = QString(QLatin1Char(' ')).repeated(indent * 2);
-    QString result = indentStr + QLatin1String("Doc\n");
+    QString result = QLatin1String("Doc\n");
     for (AstNode* child : children()) {
-        result += child->dump(indent + 1);
+        result += child->dump();
     }
     return result;
 }
@@ -1839,10 +2141,9 @@ MutableNode::MutableNode(const KDevelop::RangeInRevision& range)
 {
 }
 
-QString MutableNode::dump(int indent) const
+QString MutableNode::dump() const
 {
-    QString indentStr = QString(QLatin1Char(' ')).repeated(indent * 2);
-    return indentStr + QLatin1String("Mutable\n");
+    return QLatin1String("Mutable\n");
 }
 
 OuterNode::OuterNode(const KDevelop::RangeInRevision& range)
@@ -1850,10 +2151,9 @@ OuterNode::OuterNode(const KDevelop::RangeInRevision& range)
 {
 }
 
-QString OuterNode::dump(int indent) const
+QString OuterNode::dump() const
 {
-    QString indentStr = QString(QLatin1Char(' ')).repeated(indent * 2);
-    return indentStr + QLatin1String("Outer\n");
+    return QLatin1String("Outer\n");
 }
 
 PublicNode::PublicNode(const KDevelop::RangeInRevision& range)
@@ -1861,10 +2161,9 @@ PublicNode::PublicNode(const KDevelop::RangeInRevision& range)
 {
 }
 
-QString PublicNode::dump(int indent) const
+QString PublicNode::dump() const
 {
-    QString indentStr = QString(QLatin1Char(' ')).repeated(indent * 2);
-    return indentStr + QLatin1String("Public\n");
+    return QLatin1String("Public\n");
 }
 
 VarNode::VarNode(const KDevelop::RangeInRevision& range)
@@ -1872,10 +2171,9 @@ VarNode::VarNode(const KDevelop::RangeInRevision& range)
 {
 }
 
-QString VarNode::dump(int indent) const
+QString VarNode::dump() const
 {
-    QString indentStr = QString(QLatin1Char(' ')).repeated(indent * 2);
-    return indentStr + QLatin1String("Var\n");
+    return QLatin1String("Var\n");
 }
 
 TypeNode::TypeNode(const KDevelop::RangeInRevision& range)
@@ -1883,10 +2181,9 @@ TypeNode::TypeNode(const KDevelop::RangeInRevision& range)
 {
 }
 
-QString TypeNode::dump(int indent) const
+QString TypeNode::dump() const
 {
-    QString indentStr = QString(QLatin1Char(' ')).repeated(indent * 2);
-    return indentStr + QLatin1String("Type\n");
+    return QLatin1String("Type\n");
 }
 
 }

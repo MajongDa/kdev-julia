@@ -31,7 +31,7 @@ void JuliaAstDefaultVisitor::visitBlock(AstNode* node)
 void JuliaAstDefaultVisitor::visitFunction(FunctionNode* node)
 {
     if (!node) return;
-    visitNode(node->arguments());
+    visitNode(node->callNode());
     visitNode(node->body());
 }
 
@@ -115,13 +115,11 @@ void JuliaAstDefaultVisitor::visitAssignment(AssignmentNode* node)
     }
 }
 
-void JuliaAstDefaultVisitor::visitReturn(AstNode* node)
+void JuliaAstDefaultVisitor::visitReturn(ReturnNode* node)
 {
     if (!node) return;
-    for (AstNode* child : node->children()) {
-        if (child) {
-            visitNode(child);
-        }
+    if (node->value()) {
+        visitNode(node->value());
     }
 }
 
@@ -135,24 +133,18 @@ void JuliaAstDefaultVisitor::visitIf(AstNode* node)
     }
 }
 
-void JuliaAstDefaultVisitor::visitWhile(AstNode* node)
+void JuliaAstDefaultVisitor::visitWhile(WhileNode* node)
 {
     if (!node) return;
-    for (AstNode* child : node->children()) {
-        if (child) {
-            visitNode(child);
-        }
-    }
+    visitNode(node->condition());
+    visitNode(node->body());
 }
 
-void JuliaAstDefaultVisitor::visitFor(AstNode* node)
+void JuliaAstDefaultVisitor::visitFor(ForNode* node)
 {
     if (!node) return;
-    for (AstNode* child : node->children()) {
-        if (child) {
-            visitNode(child);
-        }
-    }
+    visitNode(node->iterator());
+    visitNode(node->body());
 }
 
 void JuliaAstDefaultVisitor::visitTry(TryNode* node)
@@ -333,7 +325,9 @@ void JuliaAstDefaultVisitor::visitTypeAnnotation(AstNode* node)
     }
 }
 
-void JuliaAstDefaultVisitor::visitParameters(AstNode* node)
+// visitFunctionSignature traverses the Call node that's part of a function definition
+// It visits all children (the function name + parameters) for traversal
+void JuliaAstDefaultVisitor::visitFunctionSignature(CallNode* node)
 {
     if (!node) return;
     for (AstNode* child : node->children()) {

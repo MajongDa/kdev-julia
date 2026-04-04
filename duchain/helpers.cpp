@@ -319,10 +319,62 @@ Declaration* Helper::declarationForName(const QString& name,
     DUChainReadLocker lock(DUChain::lock());
 
     QualifiedIdentifier id(name);
-    QList<Declaration*> decls = context->findDeclarations(id, location);
+    
+    // First try findLocalDeclarations (like Python's helpers.cpp does)
+    QList<Declaration*> localDeclarations = context->findLocalDeclarations(
+        id.last(), location, nullptr,
+        AbstractType::Ptr(), DUContext::DontResolveAliases);
+    
+    if (!localDeclarations.isEmpty()) {
+        return localDeclarations.last();
+    }
+    
+    // Use findDeclarations with findUntil parameter like Python does
+    // This finds declarations whose range ends before findUntil
+    // If location is valid, use it; otherwise use end of top context
+    CursorInRevision findUntil = location.isValid() ? location 
+                                                     : context->topContext()->range().end;
+    
+    QList<Declaration*> declarations = context->findDeclarations(id, findUntil);
+    if (!declarations.isEmpty()) {
+        return declarations.first();
+    }
+    
+    // Search in parent contexts (like Python's helpers.cpp does)
+    const DUContext* currentContext = context;
+    while ((currentContext = currentContext->parentContext())) {
+        // Try findLocalDeclarations first
+        QList<Declaration*> localDecls = currentContext->findLocalDeclarations(
+            id.last(), location, nullptr,
+            AbstractType::Ptr(), DUContext::DontResolveAliases);
+        
+        if (!localDecls.isEmpty()) {
+            return localDecls.last();
+        }
+        
+        // Also try findDeclarations with findUntil for broader search
+        CursorInRevision parentFindUntil = location.isValid() ? location 
+                                                               : currentContext->topContext()->range().end;
+        declarations = currentContext->findDeclarations(id, parentFindUntil);
+        if (!declarations.isEmpty()) {
+            return declarations.first();
+        }
+    }
 
-    if (!decls.isEmpty()) {
-        return decls.first();
+    // Final fallback: try with invalid cursor to catch exact position matches
+    // This handles the case where position equals declaration start position
+    declarations = context->findDeclarations(id, CursorInRevision::invalid());
+    if (!declarations.isEmpty()) {
+        return declarations.first();
+    }
+    
+    // Search in parent contexts with invalid cursor as last resort
+    currentContext = context;
+    while ((currentContext = currentContext->parentContext())) {
+        declarations = currentContext->findDeclarations(id, CursorInRevision::invalid());
+        if (!declarations.isEmpty()) {
+            return declarations.first();
+        }
     }
 
     return nullptr;

@@ -55,10 +55,12 @@ protected:
     void visitTry(TryNode* node) override;
     void visitLet(LetNode* node) override;
     void visitDo(DoNode* node) override;
+    void visitFor(ForNode* node) override;
+    void visitWhile(WhileNode* node) override;
 
     // For function parameters and body
-    void visitFunctionParameters(AstNode* node, FunctionNode* funcNode);
-    void visitFunctionBody(AstNode* node, FunctionNode* funcNode);
+    void visitFunctionParameters(FunctionNode* funcNode);
+    void visitFunctionBody(FunctionNode* funcNode);
 
     virtual void addImportedContexts();
 

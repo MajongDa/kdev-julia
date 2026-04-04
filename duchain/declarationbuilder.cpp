@@ -111,6 +111,9 @@ void DeclarationBuilder::visitFunction(FunctionNode* node)
     QString name = node->functionName();
     qCDebug(KDEV_JULIA) << "  Function name:" << name;
     
+    KDevelop::Declaration* funcDecl = nullptr;
+    KDevelop::FunctionType::Ptr funcType;
+    
     if (!name.isEmpty()) {
         AstNode* nameNode = node->functionNameNode();
         
@@ -118,48 +121,39 @@ void DeclarationBuilder::visitFunction(FunctionNode* node)
         qCDebug(KDEV_JULIA) << "  openDeclaration returned:" << decl << "in context:" << currentContext();
         if (decl) {
             qCDebug(KDEV_JULIA) << "  Function declaration created:" << name << "in context:" << currentContext();
-            // Use Instance for functions (not Type which is for classes/structs)
             decl->setKind(KDevelop::Declaration::Instance);
             decl->setInSymbolTable(false);
             
-            // Create FunctionType
-            KDevelop::FunctionType::Ptr funcType(new KDevelop::FunctionType());
+            // Create FunctionType - parameter types will be collected during traversal
+            funcType = KDevelop::FunctionType::Ptr(new KDevelop::FunctionType());
             
-            // Add parameter types
+            // Add placeholder arguments (will be updated after traversal)
             QList<AstNode*> params = node->parameters();
-            for (AstNode* param : params) {
-                if (!param) continue;
-                
-                AstNode* paramTypeNode = param->lastChild();
-                if (paramTypeNode) {
-                    KDevelop::AbstractType* paramType = TypeMapper::typeFromAstNode(paramTypeNode);
-                    if (paramType) {
-                        funcType->addArgument(KDevelop::AbstractType::Ptr(paramType));
-                    } else {
-                        auto* mixedType = new KDevelop::IntegralType(KDevelop::IntegralType::TypeMixed);
-                        funcType->addArgument(KDevelop::AbstractType::Ptr(mixedType));
-                    }
-                }
+            for (int i = 0; i < params.size(); ++i) {
+                auto* mixedType = new KDevelop::IntegralType(KDevelop::IntegralType::TypeMixed);
+                funcType->addArgument(KDevelop::AbstractType::Ptr(mixedType));
             }
             
-            // Add return type
+            // Add return type using ExpressionVisitor (like Python)
             if (node->hasReturnType()) {
                 AstNode* retTypeNode = node->returnType();
                 if (retTypeNode) {
-                    KDevelop::AbstractType* retType = TypeMapper::typeFromAstNode(retTypeNode);
-                    if (retType) {
-                        funcType->setReturnType(KDevelop::AbstractType::Ptr(retType));
+                    ExpressionVisitor typeVisitor(currentContext());
+                    typeVisitor.visitNode(retTypeNode);
+                    if (typeVisitor.lastType()) {
+                        funcType->setReturnType(typeVisitor.lastType());
+                        qCDebug(KDEV_JULIA) << "  Return type from annotation:" << typeVisitor.lastType()->toString();
                     }
                 }
             }
             
             decl->setType(funcType);
+            funcDecl = decl;
             
-            // Save pointer before closing - we need it after closeDeclaration
-            KDevelop::Declaration* funcDecl = decl;
-            closeDeclaration();
+            // Push FunctionType onto stack so return statements can find it via currentType<FunctionType>()
+            // This must be done BEFORE traversal, like Python does
+            openType(KDevelop::AbstractType::Ptr(funcType.data()));
             
-            // Register in symbol table - this is critical for navigation to work!
             if (funcDecl) {
                 funcDecl->setInSymbolTable(true);
             }
@@ -183,10 +177,22 @@ void DeclarationBuilder::visitFunction(FunctionNode* node)
         }
     }
     
-    // Continue traversal - call inherited methods from ContextBuilder to create contexts
-    // (NOT visitFunction which would cause infinite recursion)
-    visitFunctionParameters(node, node);
-    visitFunctionBody(node, node);
+    // Continue traversal - inherited methods from ContextBuilder handle context creation
+    // Parameter declarations are created in visitParameters during traversal
+    visitFunctionParameters(node);
+    visitFunctionBody(node);
+    
+    // Close declaration AFTER traversal (like Python does)
+    closeDeclaration();
+    
+    // Pop FunctionType from stack
+    closeType();
+    
+    // Update declaration's type AFTER traversal to capture any modifications (like return type)
+    // This is exactly what Python does - call setType again after traversal
+    if (funcDecl && funcType) {
+        funcDecl->setType(KDevelop::AbstractType::Ptr(funcType.data()));
+    }
     
     qCDebug(KDEV_JULIA) << "<<< DeclarationBuilder::visitFunction DONE";
 }
@@ -635,18 +641,182 @@ void DeclarationBuilder::visitAssignment(AssignmentNode* node)
         declType = KDevelop::AbstractType::Ptr(mixedType);
     }
     
-    // Create declaration for target
-    KDevelop::Declaration* decl = openDeclaration<KDevelop::Declaration>(identifierNode, target);
-    if (decl) {
+    // Check if declaration already exists in current context (prevent duplicates)
+    // Similar to Python's eventuallyReopenDeclaration
+    QString varName = identifierNode->text();
+    KDevelop::QualifiedIdentifier id(varName);
+    KDevelop::CursorInRevision searchPos = identifierNode->range().start;
+    QList<KDevelop::Declaration*> existing = currentContext()->findDeclarations(id, searchPos);
+    
+    KDevelop::Declaration* decl = nullptr;
+    if (!existing.isEmpty()) {
+        // Reuse existing declaration - keep original range, just update type
+        // DO NOT call openDeclaration here - it would create a duplicate!
+        // DO NOT overwrite range - keep the original declaration position
+        qCDebug(KDEV_JULIA) << "  Reusing existing declaration:" << varName;
+        decl = existing.first();
         decl->setType(declType);
-        qCDebug(KDEV_JULIA) << "  Assignment declaration created:" << identifierNode->text() << "type:" << declType->toString();
-        KDevelop::Declaration* varDecl = decl;
-        closeDeclaration();
-        // Register in symbol table for navigation to work
-        varDecl->setInSymbolTable(true);
+        decl->setInSymbolTable(true);
+    } else {
+        // Create new declaration
+        qCDebug(KDEV_JULIA) << "  Creating new declaration:" << varName;
+        decl = openDeclaration<KDevelop::Declaration>(identifierNode, target);
+        if (decl) {
+            decl->setType(declType);
+            closeDeclaration();
+            decl->setInSymbolTable(true);
+        }
+    }
+    
+    if (decl) {
+        qCDebug(KDEV_JULIA) << "  Assignment declaration:" << varName << "type:" << declType->toString();
     }
     
     qCDebug(KDEV_JULIA) << "<<< DeclarationBuilder::visitAssignment DONE";
+}
+
+void DeclarationBuilder::visitFor(ForNode* node)
+{
+    if (!node) {
+        return;
+    }
+    qCDebug(KDEV_JULIA) << ">>> DeclarationBuilder::visitFor";
+    
+    JuliaAstDefaultVisitor::visitFor(node);
+    
+    qCDebug(KDEV_JULIA) << "<<< DeclarationBuilder::visitFor DONE";
+}
+
+void DeclarationBuilder::visitWhile(WhileNode* node)
+{
+    if (!node) {
+        return;
+    }
+    qCDebug(KDEV_JULIA) << ">>> DeclarationBuilder::visitWhile";
+    
+    JuliaAstDefaultVisitor::visitWhile(node);
+    
+    qCDebug(KDEV_JULIA) << "<<< DeclarationBuilder::visitWhile DONE";
+}
+
+void DeclarationBuilder::visitGlobal(GlobalNode* node)
+{
+    if (!node) {
+        return;
+    }
+    qCDebug(KDEV_JULIA) << ">>> DeclarationBuilder::visitGlobal";
+    
+    JuliaAstDefaultVisitor::visitGlobal(node);
+    
+    // Global declares variables in the global scope
+    for (AstNode* ident : node->identifiers()) {
+        if (ident && ident->kind() == NodeKind::Identifier) {
+            QString name = ident->text();
+            qCDebug(KDEV_JULIA) << "  Global variable:" << name;
+            
+            auto* decl = openDeclaration<KDevelop::Declaration>(ident, node);
+            if (decl) {
+                decl->setKind(KDevelop::Declaration::Instance);
+                auto* mixedType = new KDevelop::IntegralType(KDevelop::IntegralType::TypeMixed);
+                decl->setType(KDevelop::AbstractType::Ptr(mixedType));
+                closeDeclaration();
+                decl->setInSymbolTable(true);
+            }
+        }
+    }
+    
+    qCDebug(KDEV_JULIA) << "<<< DeclarationBuilder::visitGlobal DONE";
+}
+
+void DeclarationBuilder::visitLocal(LocalNode* node)
+{
+    if (!node) {
+        return;
+    }
+    qCDebug(KDEV_JULIA) << ">>> DeclarationBuilder::visitLocal";
+    
+    JuliaAstDefaultVisitor::visitLocal(node);
+    
+    // Local declares variables in the current scope
+    for (AstNode* ident : node->identifiers()) {
+        if (ident && ident->kind() == NodeKind::Identifier) {
+            QString name = ident->text();
+            qCDebug(KDEV_JULIA) << "  Local variable:" << name;
+            
+            auto* decl = openDeclaration<KDevelop::Declaration>(ident, node);
+            if (decl) {
+                decl->setKind(KDevelop::Declaration::Instance);
+                auto* mixedType = new KDevelop::IntegralType(KDevelop::IntegralType::TypeMixed);
+                decl->setType(KDevelop::AbstractType::Ptr(mixedType));
+                closeDeclaration();
+                decl->setInSymbolTable(true);
+            }
+        }
+    }
+    
+    qCDebug(KDEV_JULIA) << "<<< DeclarationBuilder::visitLocal DONE";
+}
+
+void DeclarationBuilder::visitConst(ConstNode* node)
+{
+    if (!node) {
+        return;
+    }
+    qCDebug(KDEV_JULIA) << ">>> DeclarationBuilder::visitConst";
+    
+    JuliaAstDefaultVisitor::visitConst(node);
+    
+    AstNode* target = node->target();
+    if (!target) {
+        return;
+    }
+    
+    // Handle type annotation: const a::Bool = 1
+    AstNode* identifierNode = target;
+    AstNode* explicitType = nullptr;
+    
+    if (target->kind() == NodeKind::TypeAnnotation) {
+        identifierNode = target->firstChild();
+        explicitType = target->lastChild();
+    }
+    
+    if (!identifierNode || identifierNode->kind() != NodeKind::Identifier) {
+        return;
+    }
+    
+    QString name = identifierNode->text();
+    qCDebug(KDEV_JULIA) << "  Const variable:" << name;
+    
+    KDevelop::AbstractType::Ptr declType;
+    
+    if (explicitType) {
+        ExpressionVisitor typeVisitor(currentContext());
+        typeVisitor.visitNode(explicitType);
+        declType = typeVisitor.lastType();
+    } else {
+        AstNode* value = node->value();
+        if (value) {
+            ExpressionVisitor v(currentContext());
+            v.visitNode(value);
+            declType = v.lastType();
+        }
+    }
+    
+    if (!declType) {
+        auto* mixedType = new KDevelop::IntegralType(KDevelop::IntegralType::TypeMixed);
+        declType = KDevelop::AbstractType::Ptr(mixedType);
+    }
+    
+    auto* decl = openDeclaration<KDevelop::Declaration>(identifierNode, node);
+    if (decl) {
+        decl->setKind(KDevelop::Declaration::Instance);
+        decl->setType(declType);
+        qCDebug(KDEV_JULIA) << "  Const declaration created:" << name << "type:" << declType->toString();
+        closeDeclaration();
+        decl->setInSymbolTable(true);
+    }
+    
+    qCDebug(KDEV_JULIA) << "<<< DeclarationBuilder::visitConst DONE";
 }
 
 // ============================================================================
@@ -692,38 +862,38 @@ KDevelop::QualifiedIdentifier DeclarationBuilder::identifierForNode(AstNode* nod
     return KDevelop::QualifiedIdentifier();
 }
 
-void DeclarationBuilder::visitReturn(AstNode* node)
+void DeclarationBuilder::visitReturn(ReturnNode* node)
 {
     if (!node) {
         return;
     }
     qCDebug(KDEV_JULIA) << ">>> DeclarationBuilder::visitReturn";
     
-    KDevelop::Declaration* funcDecl = currentDeclaration();
-    if (!funcDecl || !funcDecl->isFunctionDeclaration()) {
+    // Use currentType<FunctionType>() like Python does - finds function from context stack
+    KDevelop::FunctionType::Ptr funcType = currentType<KDevelop::FunctionType>();
+    if (funcType) {
+        qCDebug(KDEV_JULIA) << "  currentType<FunctionType>() returned:" << funcType->toString();
+    } else {
+        qCDebug(KDEV_JULIA) << "  currentType<FunctionType>() returned: nullptr";
+    }
+    
+    if (!funcType) {
         qCDebug(KDEV_JULIA) << "Return outside function, skipping";
+        DeclarationBuilderBase::visitReturn(node);
         return;
     }
     
-    AstNode* valueNode = nullptr;
-    for (AstNode* child : node->children()) {
-        if (child && child->kind() != NodeKind::Return) {
-            valueNode = child;
-            break;
-        }
-    }
+    AstNode* valueNode = node->value();
     
     if (valueNode) {
         ExpressionVisitor exprVisitor(currentContext());
         exprVisitor.visitNode(valueNode);
         KDevelop::AbstractType::Ptr returnType = exprVisitor.lastType();
         
-        if (returnType && funcDecl->abstractType()) {
+        if (returnType && funcType) {
             KDevelop::DUChainWriteLocker lock;
-            if (auto* funcType = dynamic_cast<KDevelop::FunctionType*>(funcDecl->abstractType().data())) {
-                funcType->setReturnType(returnType);
-                qCDebug(KDEV_JULIA) << "Set return type:" << returnType->toString();
-            }
+            funcType->setReturnType(returnType);
+            qCDebug(KDEV_JULIA) << "Set return type:" << returnType->toString();
         }
     }
     
@@ -779,6 +949,67 @@ void DeclarationBuilder::visitImportPath(AstNode* node)
     
     DeclarationBuilderBase::visitImportPath(node);
     qCDebug(KDEV_JULIA) << "<<< DeclarationBuilder::visitImportPath DONE";
+}
+
+// visitFunctionSignature creates declarations for function parameters from the Call node
+// The Call node's first child is the function name, remaining children are parameters
+void DeclarationBuilder::visitFunctionSignature(CallNode* node)
+{
+    if (!node) {
+        return;
+    }
+    qCDebug(KDEV_JULIA) << ">>> DeclarationBuilder::visitFunctionSignature";
+    
+    // Create declarations for each parameter
+    // At this point, currentContext() is the function's parameter context
+    // First child is function name, rest are parameters
+    const auto& children = node->children();
+    for (int i = 1; i < children.size(); ++i) {
+        AstNode* param = children.at(i);
+        if (!param) continue;
+        
+        // Handle parameter: either simple identifier or TypeAnnotation (x::Int)
+        AstNode* idNode = param;
+        
+        if (param->kind() == NodeKind::TypeAnnotation) {
+            idNode = param->firstChild();
+        }
+        
+        if (!idNode || idNode->kind() != NodeKind::Identifier) {
+            continue;
+        }
+        
+        QString name = idNode->text();
+        qCDebug(KDEV_JULIA) << "  Parameter:" << name;
+        
+        // Get type - from annotation or default value or mixed
+        KDevelop::AbstractType::Ptr paramType;
+        
+        if (param->kind() == NodeKind::TypeAnnotation) {
+            AstNode* typeNode = param->lastChild();
+            if (typeNode) {
+                ExpressionVisitor v(currentContext());
+                v.visitNode(typeNode);
+                paramType = v.lastType();
+            }
+        }
+        
+        if (!paramType) {
+            paramType = KDevelop::AbstractType::Ptr(
+                new KDevelop::IntegralType(KDevelop::IntegralType::TypeMixed));
+        }
+        
+        // Create declaration in current (function parameter) context
+        auto* decl = openDeclaration<KDevelop::Declaration>(idNode, param);
+        if (decl) {
+            decl->setKind(KDevelop::Declaration::Instance);
+            decl->setType(paramType);
+            closeDeclaration();
+            decl->setInSymbolTable(true);
+        }
+    }
+    
+    qCDebug(KDEV_JULIA) << "<<< DeclarationBuilder::visitFunctionSignature DONE";
 }
 
 }

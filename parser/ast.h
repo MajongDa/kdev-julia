@@ -17,6 +17,17 @@ namespace Julia {
 class AstNode;
 class AstVisitor;
 
+// Forward declarations for class-based AST nodes (Python-style)
+class FunctionDefinitionAst;
+class ReturnValueAst;
+class NameReferenceAst;
+class AssignmentValueAst;
+class BlockAst;
+class IfBranchAst;
+class WhileLoopAst;
+class ForLoopAst;
+class TryCatchAst;
+
 enum class NodeKind {
     TopLevel,
     Block,
@@ -119,7 +130,7 @@ public:
     bool isStatement() const;
     bool isType() const;
     
-    virtual QString dump(int indent = 0) const;
+    virtual QString dump() const;
     
     void accept(AstVisitor* visitor);
     
@@ -142,14 +153,14 @@ private:
     void parseChildren(const QJsonArray& children);
 };
 
-class FunctionNode : public AstNode
+class FunctionDefinitionAst : public AstNode
 {
 public:
-    FunctionNode(const QString& name, const KDevelop::RangeInRevision& range);
+    FunctionDefinitionAst(const QString& name, const KDevelop::RangeInRevision& range);
     
     QString functionName() const;
     AstNode* functionNameNode() const;
-    AstNode* arguments() const;
+    AstNode* callNode() const;
     AstNode* body() const;
     AstNode* returnType() const;
     
@@ -158,9 +169,138 @@ public:
     QList<AstNode*> parameters() const;
     QList<AstNode*> typeParameters() const;
     
-    QString dump(int indent = 0) const override;
+    QString dump() const override;
 };
 
+class ReturnValueAst : public AstNode
+{
+public:
+    ReturnValueAst(const KDevelop::RangeInRevision& range);
+    
+    AstNode* value() const;
+    
+    QString dump() const override;
+};
+
+class NameReferenceAst : public AstNode
+{
+public:
+    NameReferenceAst(const QString& name, const KDevelop::RangeInRevision& range);
+    
+    enum class Context { Load = 1, Store = 2, Invalid = -1 };
+    
+    QString identifier() const;
+    Context context() const;
+    void setContext(Context c);
+    
+    QString dump() const override;
+    
+private:
+    Context m_context;
+};
+
+class AssignmentValueAst : public AstNode
+{
+public:
+    AssignmentValueAst(const KDevelop::RangeInRevision& range);
+    
+    AstNode* leftHandSide() const;
+    AstNode* rightHandSide() const;
+    
+    QString dump() const override;
+};
+
+class BlockAst : public AstNode
+{
+public:
+    BlockAst(const KDevelop::RangeInRevision& range);
+    
+    QList<AstNode*> statements() const;
+    
+    QString dump() const override;
+};
+
+class IfBranchAst : public AstNode
+{
+public:
+    IfBranchAst(const KDevelop::RangeInRevision& range);
+    
+    AstNode* condition() const;
+    AstNode* thenBranch() const;
+    AstNode* elseBranch() const;
+    QList<AstNode*> elseifBranches() const;
+    
+    QString dump() const override;
+};
+
+class WhileLoopAst : public AstNode
+{
+public:
+    WhileLoopAst(const KDevelop::RangeInRevision& range);
+    
+    AstNode* condition() const;
+    AstNode* body() const;
+    
+    QString dump() const override;
+};
+
+class ForLoopAst : public AstNode
+{
+public:
+    ForLoopAst(const KDevelop::RangeInRevision& range);
+    
+    AstNode* iterator() const;
+    AstNode* body() const;
+    
+    QString dump() const override;
+};
+
+class TryCatchAst : public AstNode
+{
+public:
+    TryCatchAst(const KDevelop::RangeInRevision& range);
+    
+    AstNode* tryBody() const;
+    AstNode* catchVariable() const;
+    AstNode* catchBody() const;
+    AstNode* finallyBody() const;
+    
+    QString dump() const override;
+};
+
+class ParametersNode : public AstNode
+{
+public:
+    ParametersNode(const KDevelop::RangeInRevision& range);
+
+    QList<AstNode*> parameters() const;
+
+    QString dump() const override;
+};
+
+class FunctionNode : public AstNode
+{
+public:
+    FunctionNode(const QString& name, const KDevelop::RangeInRevision& range);
+    
+    QString functionName() const;
+    AstNode* functionNameNode() const;
+    // callNode() returns the Call node representing the function signature (name + positional args)
+    // This is the same node kind as regular function calls, but context determines it's a function definition
+    AstNode* callNode() const;
+    AstNode* body() const;
+    AstNode* returnType() const;
+    
+    bool hasReturnType() const;
+    int argumentCount() const;
+    // parameters() extracts typed parameters (TypeAnnotation nodes) from the callNode's children
+    QList<AstNode*> parameters() const;
+    QList<AstNode*> typeParameters() const;
+    
+    QString dump() const override;
+};
+
+class ParametersNode;
 class StructNode : public AstNode
 {
 public:
@@ -170,7 +310,7 @@ public:
     QList<AstNode*> fields() const;
     QList<AstNode*> supertypes() const;
     
-    QString dump(int indent = 0) const override;
+    QString dump() const override;
 };
 
 class CallNode : public AstNode
@@ -185,7 +325,7 @@ public:
     bool isFunctionCall() const;
     bool isMacroCall() const;
     
-    QString dump(int indent = 0) const override;
+    QString dump() const override;
 };
 
 class CurlyNode : public AstNode
@@ -198,7 +338,7 @@ public:
     
     int argumentCount() const;
     
-    QString dump(int indent = 0) const override;
+    QString dump() const override;
 };
 
 class AssignmentNode : public AstNode
@@ -209,7 +349,7 @@ public:
     AstNode* leftHandSide() const;
     AstNode* rightHandSide() const;
     
-    QString dump(int indent = 0) const override;
+    QString dump() const override;
 };
 
 class IdentifierNode : public AstNode
@@ -219,7 +359,7 @@ public:
     
     QString identifier() const;
     
-    QString dump(int indent = 0) const override;
+    QString dump() const override;
 };
 
 class StringNode : public AstNode
@@ -229,7 +369,7 @@ public:
     
     QString value() const;
     
-    QString dump(int indent = 0) const override;
+    QString dump() const override;
 };
 
 class NumberNode : public AstNode
@@ -243,7 +383,7 @@ public:
     double asFloat() const;
     qint64 asInteger() const;
     
-    QString dump(int indent = 0) const override;
+    QString dump() const override;
     
 private:
     bool m_isFloat;
@@ -256,7 +396,7 @@ public:
     
     QList<AstNode*> elements() const;
     
-    QString dump(int indent = 0) const override;
+    QString dump() const override;
 };
 
 class ArrayNode : public AstNode
@@ -266,8 +406,10 @@ public:
     
     QList<AstNode*> elements() const;
     
-    QString dump(int indent = 0) const override;
+    QString dump() const override;
 };
+
+
 
 class TryNode : public AstNode
 {
@@ -279,7 +421,7 @@ public:
     AstNode* catchBody() const;
     AstNode* finallyBody() const;
     
-    QString dump(int indent = 0) const override;
+    QString dump() const override;
 };
 
 class ConstNode : public AstNode
@@ -290,7 +432,7 @@ public:
     AstNode* target() const;
     AstNode* value() const;
     
-    QString dump(int indent = 0) const override;
+    QString dump() const override;
 };
 
 class LetNode : public AstNode
@@ -301,7 +443,7 @@ public:
     QList<AstNode*> bindings() const;
     AstNode* body() const;
     
-    QString dump(int indent = 0) const override;
+    QString dump() const override;
 };
 
 class DoNode : public AstNode
@@ -312,7 +454,7 @@ public:
     QList<AstNode*> arguments() const;
     AstNode* body() const;
     
-    QString dump(int indent = 0) const override;
+    QString dump() const override;
 };
 
 class QuoteNode : public AstNode
@@ -322,7 +464,7 @@ public:
     
     QList<AstNode*> body() const;
     
-    QString dump(int indent = 0) const override;
+    QString dump() const override;
 };
 
 class GlobalNode : public AstNode
@@ -332,7 +474,7 @@ public:
     
     QList<AstNode*> identifiers() const;
     
-    QString dump(int indent = 0) const override;
+    QString dump() const override;
 };
 
 class LocalNode : public AstNode
@@ -342,7 +484,7 @@ public:
     
     QList<AstNode*> identifiers() const;
     
-    QString dump(int indent = 0) const override;
+    QString dump() const override;
 };
 
 class BaremoduleNode : public AstNode
@@ -353,7 +495,7 @@ public:
     QString moduleName() const;
     AstNode* body() const;
     
-    QString dump(int indent = 0) const override;
+    QString dump() const override;
 };
 
 class ModuleNode : public AstNode
@@ -364,7 +506,7 @@ public:
     QString moduleName() const;
     AstNode* body() const;
     
-    QString dump(int indent = 0) const override;
+    QString dump() const override;
 };
 
 class BeginNode : public AstNode
@@ -374,7 +516,7 @@ public:
     
     AstNode* body() const;
     
-    QString dump(int indent = 0) const override;
+    QString dump() const override;
 };
 
 class BreakNode : public AstNode
@@ -382,7 +524,7 @@ class BreakNode : public AstNode
 public:
     BreakNode(const KDevelop::RangeInRevision& range);
     
-    QString dump(int indent = 0) const override;
+    QString dump() const override;
 };
 
 class ContinueNode : public AstNode
@@ -390,7 +532,7 @@ class ContinueNode : public AstNode
 public:
     ContinueNode(const KDevelop::RangeInRevision& range);
     
-    QString dump(int indent = 0) const override;
+    QString dump() const override;
 };
 
 class ReturnNode : public AstNode
@@ -400,7 +542,7 @@ public:
     
     AstNode* value() const;
     
-    QString dump(int indent = 0) const override;
+    QString dump() const override;
 };
 
 class WhileNode : public AstNode
@@ -411,7 +553,7 @@ public:
     AstNode* condition() const;
     AstNode* body() const;
     
-    QString dump(int indent = 0) const override;
+    QString dump() const override;
 };
 
 class ForNode : public AstNode
@@ -422,7 +564,7 @@ public:
     AstNode* iterator() const;
     AstNode* body() const;
     
-    QString dump(int indent = 0) const override;
+    QString dump() const override;
 };
 
 class IfNode : public AstNode
@@ -435,7 +577,7 @@ public:
     AstNode* elseBranch() const;
     QList<AstNode*> elseifBranches() const;
     
-    QString dump(int indent = 0) const override;
+    QString dump() const override;
 };
 
 class ElseIfNode : public AstNode
@@ -446,7 +588,7 @@ public:
     AstNode* condition() const;
     AstNode* body() const;
     
-    QString dump(int indent = 0) const override;
+    QString dump() const override;
 };
 
 class ElseNode : public AstNode
@@ -456,7 +598,7 @@ public:
     
     AstNode* body() const;
     
-    QString dump(int indent = 0) const override;
+    QString dump() const override;
 };
 
 class EndNode : public AstNode
@@ -464,7 +606,7 @@ class EndNode : public AstNode
 public:
     EndNode(const KDevelop::RangeInRevision& range);
     
-    QString dump(int indent = 0) const override;
+    QString dump() const override;
 };
 
 class ExportNode : public AstNode
@@ -474,7 +616,7 @@ public:
     
     QList<AstNode*> identifiers() const;
     
-    QString dump(int indent = 0) const override;
+    QString dump() const override;
 };
 
 class ImportNode : public AstNode
@@ -484,7 +626,7 @@ public:
     
     QList<AstNode*> importPaths() const;
     
-    QString dump(int indent = 0) const override;
+    QString dump() const override;
 };
 
 class MacroNode : public AstNode
@@ -496,7 +638,7 @@ public:
     AstNode* parameters() const;
     AstNode* body() const;
     
-    QString dump(int indent = 0) const override;
+    QString dump() const override;
 };
 
 class AbstractNode : public AstNode
@@ -507,7 +649,7 @@ public:
     QString typeName() const;
     AstNode* supertype() const;
     
-    QString dump(int indent = 0) const override;
+    QString dump() const override;
 };
 
 class PrimitiveNode : public AstNode
@@ -518,7 +660,7 @@ public:
     QString typeName() const;
     AstNode* underlyingType() const;
     
-    QString dump(int indent = 0) const override;
+    QString dump() const override;
 };
 
 class CatchNode : public AstNode
@@ -529,7 +671,7 @@ public:
     AstNode* variable() const;
     AstNode* body() const;
     
-    QString dump(int indent = 0) const override;
+    QString dump() const override;
 };
 
 class FinallyNode : public AstNode
@@ -539,7 +681,7 @@ public:
     
     AstNode* body() const;
     
-    QString dump(int indent = 0) const override;
+    QString dump() const override;
 };
 
 class AsNode : public AstNode
@@ -550,7 +692,7 @@ public:
     AstNode* original() const;
     AstNode* alias() const;
     
-    QString dump(int indent = 0) const override;
+    QString dump() const override;
 };
 
 class DocNode : public AstNode
@@ -560,7 +702,7 @@ public:
     
     AstNode* document() const;
     
-    QString dump(int indent = 0) const override;
+    QString dump() const override;
 };
 
 class MutableNode : public AstNode
@@ -568,7 +710,7 @@ class MutableNode : public AstNode
 public:
     MutableNode(const KDevelop::RangeInRevision& range);
     
-    QString dump(int indent = 0) const override;
+    QString dump() const override;
 };
 
 class OuterNode : public AstNode
@@ -576,7 +718,7 @@ class OuterNode : public AstNode
 public:
     OuterNode(const KDevelop::RangeInRevision& range);
     
-    QString dump(int indent = 0) const override;
+    QString dump() const override;
 };
 
 class PublicNode : public AstNode
@@ -584,7 +726,7 @@ class PublicNode : public AstNode
 public:
     PublicNode(const KDevelop::RangeInRevision& range);
     
-    QString dump(int indent = 0) const override;
+    QString dump() const override;
 };
 
 class VarNode : public AstNode
@@ -592,7 +734,7 @@ class VarNode : public AstNode
 public:
     VarNode(const KDevelop::RangeInRevision& range);
     
-    QString dump(int indent = 0) const override;
+    QString dump() const override;
 };
 
 class TypeNode : public AstNode
@@ -600,7 +742,7 @@ class TypeNode : public AstNode
 public:
     TypeNode(const KDevelop::RangeInRevision& range);
     
-    QString dump(int indent = 0) const override;
+    QString dump() const override;
 };
 
 }

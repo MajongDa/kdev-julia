@@ -24,12 +24,12 @@ public:
 
     // Statements
     void visitAssignment(AssignmentNode* node) override;
-    void visitReturn(AstNode* node) override;
+    void visitReturn(ReturnNode* node) override;
     void visitIf(AstNode* node) override;
     void visitElseIf(AstNode* node) override;
     void visitElse(AstNode* node) override;
-    void visitWhile(AstNode* node) override;
-    void visitFor(AstNode* node) override;
+    void visitWhile(WhileNode* node) override;
+    void visitFor(ForNode* node) override;
     void visitTry(TryNode* node) override;
     void visitCatch(AstNode* node) override;
     void visitFinally(AstNode* node) override;
@@ -47,10 +47,10 @@ public:
 
     // Expressions
     void visitCall(CallNode* node) override;
+    void visitFunctionSignature(CallNode* node) override;
     void visitCurly(CurlyNode* node) override;
     void visitWhere(AstNode* node) override;
     void visitTypeAnnotation(AstNode* node) override;
-    void visitParameters(AstNode* node) override;
     void visitTuple(AstNode* node) override;
     void visitArray(AstNode* node) override;
     void visitDict(AstNode* node) override;

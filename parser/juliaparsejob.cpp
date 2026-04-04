@@ -104,7 +104,7 @@ bool JuliaParseJob::parseWithJuliaBridge(const QString& content)
 
     // Debug: Dump the parsed AST
     qCDebug(KDEV_JULIA) << "=== PARSED AST ===";
-    QString astDump = ast->dump(0);
+    QString astDump = ast->dump();
     // Truncate if too long
     if (astDump.length() > 10000) {
         astDump = astDump.left(10000).append(QStringLiteral("\n... [TRUNCATED]"));
@@ -194,6 +194,53 @@ bool JuliaParseJob::buildDUChain(AstNode* ast)
     usebuilder.setEditor(&editor);
     usebuilder.buildUses(ast);
     qCDebug(KDEV_JULIA) << "Uses built";
+    
+    // DEBUG: Verify uses are stored
+    {
+        qCDebug(KDEV_JULIA) << "=== DEBUG: Verifying uses after buildUses ===";
+        KDevelop::DUChainReadLocker lock(KDevelop::DUChain::lock());
+        
+        // Check top context
+        qCDebug(KDEV_JULIA) << "Top context:" << newContext.data();
+        qCDebug(KDEV_JULIA) << "Top context usesCount:" << newContext->usesCount();
+        
+        // Recursively check all contexts
+        QVector<KDevelop::DUContext*> toCheck;
+        toCheck.append(newContext.data());
+        
+        while (!toCheck.isEmpty()) {
+            KDevelop::DUContext* ctx = toCheck.takeFirst();
+            if (!ctx) continue;
+            
+            qCDebug(KDEV_JULIA) << "Context:" << ctx 
+                                 << "type:" << ctx->type() 
+                                 << "range:" << ctx->range() 
+                                 << "usesCount:" << ctx->usesCount();
+            
+            // List uses in this context
+            for (uint i = 0; i < ctx->usesCount(); i++) {
+                const KDevelop::Use& use = ctx->uses()[i];
+                qCDebug(KDEV_JULIA) << "  Use[" << i << "] range:" << use.m_range 
+                                     << "declIndex:" << use.m_declarationIndex;
+                
+                // Try to get declaration via the method
+                KDevelop::Declaration* decl = use.usedDeclaration(newContext.data());
+                if (decl) {
+                    qCDebug(KDEV_JULIA) << "    -> Declaration:" << decl->identifier().toString() 
+                                        << "range:" << decl->range();
+                } else {
+                    qCDebug(KDEV_JULIA) << "    -> Declaration: could not resolve (index=" 
+                                         << use.m_declarationIndex << ")";
+                }
+            }
+            
+            // Add child contexts to check
+            for (KDevelop::DUContext* child : ctx->childContexts()) {
+                toCheck.append(child);
+            }
+        }
+        qCDebug(KDEV_JULIA) << "=== END DEBUG ===";
+    }
 
     // Start the code highlighter
     auto* bgParser = KDevelop::ICore::self()->languageController()->backgroundParser();

@@ -27,7 +27,8 @@ void UseBuilder::visitIdentifier(AstNode* node)
     }
 
     qCDebug(KDEV_JULIA) << ">>> UseBuilder::visitIdentifier:" << node->text() << "range:" << node->range();
-    qCDebug(KDEV_JULIA) << "  currentContext:" << currentContext();
+    qCDebug(KDEV_JULIA) << "  currentContext:" << currentContext() 
+                         << "type:" << (currentContext() ? currentContext()->type() : -1);
 
     if (AstNode* parent = node->parent()) {
         if (parent->kind() == NodeKind::Function ||
@@ -48,8 +49,30 @@ void UseBuilder::visitIdentifier(AstNode* node)
     {
         KDevelop::DUChainReadLocker lock(KDevelop::DUChain::lock());
         ctx = topContext()->findContextAt(node->range().start, true);
+        
+        // Debug: show context hierarchy
+        if (ctx) {
+            qCDebug(KDEV_JULIA) << "  Context hierarchy:";
+            KDevelop::DUContext* parent = ctx->parentContext();
+            int depth = 0;
+            while (parent) {
+                qCDebug(KDEV_JULIA) << "    Parent[" << depth << "]:" << parent 
+                                     << "type:" << parent->type() 
+                                     << "range:" << parent->range();
+                parent = parent->parentContext();
+                depth++;
+            }
+            
+            // Show declarations in this context
+            qCDebug(KDEV_JULIA) << "  Local declarations in ctx:" << ctx->localDeclarations().size();
+            for (auto* d : ctx->localDeclarations()) {
+                qCDebug(KDEV_JULIA) << "    Decl:" << d->identifier().toString() 
+                                     << "range:" << d->range();
+            }
+        }
     }
-    qCDebug(KDEV_JULIA) << "  findContextAt returned:" << ctx;
+    qCDebug(KDEV_JULIA) << "  findContextAt returned:" << ctx 
+                         << "type:" << (ctx ? ctx->type() : -1);
     if (!ctx) {
         ctx = currentContext();  // fallback
     }
@@ -71,16 +94,38 @@ void UseBuilder::visitIdentifier(AstNode* node)
     }
     
     KDevelop::RangeInRevision useRange = editorFindRange(node, node);
+    qCDebug(KDEV_JULIA) << "  Use range:" << useRange;
     
     auto decl = v.lastDeclaration();
     if (decl) {
-        qCDebug(KDEV_JULIA) << "  Found declaration:" << decl->identifier().toString() << "range:" << decl->range();
+        qCDebug(KDEV_JULIA) << "  Found declaration:" << decl->identifier().toString() 
+                             << "range:" << decl->range() 
+                             << "in context:" << decl->context();
         if (decl->range() == useRange) {
             qCDebug(KDEV_JULIA) << "  Skipping - is declaration itself";
             return;
         }
+        
+        // Log what context we're adding the use to
+        qCDebug(KDEV_JULIA) << "  Adding use to context:" << currentContext() 
+                             << "type:" << (currentContext() ? currentContext()->type() : -1);
+        
         UseBuilderBase::newUse(useRange, KDevelop::DeclarationPointer(decl));
         qCDebug(KDEV_JULIA) << "  Created use for declaration";
+        
+        // Verify use was added - check all child contexts too
+        {
+            KDevelop::DUChainReadLocker lock(KDevelop::DUChain::lock());
+            int totalUses = currentContext() ? currentContext()->usesCount() : 0;
+            qCDebug(KDEV_JULIA) << "  Uses in currentContext after add:" << totalUses;
+            
+            // Also check if there are uses in parent context
+            KDevelop::DUContext* parent = currentContext() ? currentContext()->parentContext() : nullptr;
+            while (parent) {
+                qCDebug(KDEV_JULIA) << "  Uses in parent context:" << parent->usesCount();
+                parent = parent->parentContext();
+            }
+        }
         return;
     }
     

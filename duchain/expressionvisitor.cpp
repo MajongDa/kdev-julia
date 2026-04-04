@@ -86,65 +86,26 @@ void ExpressionVisitor::visitIdentifier(AstNode* node)
         return;
     }
 
-    KDevelop::QualifiedIdentifier id(name);
+    // Use the actual cursor position from the node for more accurate declaration lookup
+    KDevelop::CursorInRevision searchPos = node->range().start;
     
-    qCDebug(KDEV_JULIA) << "  ExpressionVisitor: Looking up identifier:" << id.toString() 
-                         << "in context:" << context() << "range:" << context()->range();
+    qCDebug(KDEV_JULIA) << "  ExpressionVisitor: Looking up identifier:" << name 
+                         << "in context:" << context() << "at position:" << searchPos;
     
-    // Debug: list all declarations in this context
-    qCDebug(KDEV_JULIA) << "  Context has" << context()->localDeclarations().size() << "local declarations";
-    for (auto* decl : context()->localDeclarations()) {
-        qCDebug(KDEV_JULIA) << "    Decl:" << decl->identifier().toString() << "range:" << decl->range();
-    }
+    // Use Helper::declarationForName like Python does
+    KDevelop::Declaration* decl = Helper::declarationForName(name, searchPos, context());
     
-    KDevelop::DUChainReadLocker lock(KDevelop::DUChain::lock());
-    
-    // Search with position and also search in parent contexts
-    KDevelop::CursorInRevision searchPos = KDevelop::CursorInRevision::invalid();
-    qCDebug(KDEV_JULIA) << "  Searching with position:" << searchPos;
-    
-    // First try findLocalDeclarations (like Python's helpers.cpp does)
-    QList<KDevelop::Declaration*> declarations = context()->findLocalDeclarations(
-        id.last(), searchPos, nullptr,
-        KDevelop::AbstractType::Ptr(), KDevelop::DUContext::DontResolveAliases);
-    
-    // If not found locally, try findDeclarations
-    if (declarations.isEmpty()) {
-        declarations = context()->findDeclarations(id, searchPos);
-    }
-    
-    // If still not found, search in parent contexts
-    if (declarations.isEmpty()) {
-        qCDebug(KDEV_JULIA) << "  Not found directly, searching parent contexts...";
-        KDevelop::DUContext* parent = context()->parentContext();
-        while (parent && declarations.isEmpty()) {
-            qCDebug(KDEV_JULIA) << "    Searching in parent context:" << parent << "range:" << parent->range();
-            declarations = parent->findLocalDeclarations(
-                id.last(), searchPos, nullptr,
-                KDevelop::AbstractType::Ptr(), KDevelop::DUContext::DontResolveAliases);
-            if (declarations.isEmpty()) {
-                declarations = parent->findDeclarations(id, searchPos);
-            }
-            if (!declarations.isEmpty()) {
-                qCDebug(KDEV_JULIA) << "    Found in parent!";
-            }
-            parent = parent->parentContext();
-        }
-    }
-    
-    qCDebug(KDEV_JULIA) << "  ExpressionVisitor: Found" << declarations.size() << "declarations";
-    
-    if (!declarations.isEmpty()) {
-        KDevelop::Declaration* decl = declarations.first();
+    if (decl) {
         QString declType = decl->abstractType() ? decl->abstractType()->toString() : QStringLiteral("none");
-        qCDebug(KDEV_JULIA) << "  ExpressionVisitor: Found declaration:" << decl->identifier().toString() << "type:" << declType;
+        qCDebug(KDEV_JULIA) << "  ExpressionVisitor: Found declaration:" << decl->identifier().toString() 
+                            << "type:" << declType << "range:" << decl->range();
         if (decl && decl->abstractType()) {
             encounter(decl->abstractType(), KDevelop::DeclarationPointer(decl));
             return;
         }
     }
     
-    qCDebug(KDEV_JULIA) << "  ExpressionVisitor: No declaration found for:" << id.toString();
+    qCDebug(KDEV_JULIA) << "  ExpressionVisitor: No declaration found for:" << name;
     setConfident(false);
     encounterUnknown();
 }

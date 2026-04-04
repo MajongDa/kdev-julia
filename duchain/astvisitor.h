@@ -21,13 +21,24 @@ public:
     virtual void visitBaremodule(BaremoduleNode*) {}
     virtual void visitBlock(AstNode*) {}
     
+    // Class-based AST nodes (Python-style) - for proper template dispatch
+    virtual void visitFunctionDefinition(FunctionDefinitionAst*) {}
+    virtual void visitReturnValue(ReturnValueAst*) {}
+    virtual void visitNameReference(NameReferenceAst*) {}
+    virtual void visitAssignmentValue(AssignmentValueAst*) {}
+    virtual void visitBlockAst(BlockAst*) {}
+    virtual void visitIfBranch(IfBranchAst*) {}
+    virtual void visitWhileLoop(WhileLoopAst*) {}
+    virtual void visitForLoop(ForLoopAst*) {}
+    virtual void visitTryCatch(TryCatchAst*) {}
+    
     // Statements
-    virtual void visitReturn(AstNode*) {}
+    virtual void visitReturn(ReturnNode*) {}
     virtual void visitIf(AstNode*) {}
     virtual void visitElseIf(AstNode*) {}
     virtual void visitElse(AstNode*) {}
-    virtual void visitWhile(AstNode*) {}
-    virtual void visitFor(AstNode*) {}
+    virtual void visitWhile(WhileNode*) {}
+    virtual void visitFor(ForNode*) {}
     virtual void visitTry(TryNode*) {}
     virtual void visitCatch(AstNode*) {}
     virtual void visitFinally(AstNode*) {}
@@ -49,11 +60,13 @@ public:
     // Expressions - using specific types where available
     virtual void visitIdentifier(AstNode*) {}
     virtual void visitCall(CallNode*) {}
+    // visitFunctionSignature is called on Call nodes that are part of function definitions
+    // (vs regular function calls which use visitCall)
+    virtual void visitFunctionSignature(CallNode*) {}
     virtual void visitOperator(AstNode*) {}
     virtual void visitTypeAnnotation(AstNode*) {}
     virtual void visitCurly(CurlyNode*) {}
     virtual void visitWhere(AstNode*) {}
-    virtual void visitParameters(AstNode*) {}
     virtual void visitString(AstNode*) {}
     virtual void visitFloat(AstNode*) {}
     virtual void visitInteger(AstNode*) {}
