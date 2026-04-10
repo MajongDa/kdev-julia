@@ -50,7 +50,7 @@ module SocketPlotDisplay
 using Sockets
 using Dates
 
-export start_server!, stop_server!, connect_client!, disconnect_all!, activate!, deactivate!, active_display
+export start_server!, stop_server!, connect_client!, disconnect_all!, activate!, deactivate!, active_display, supported_mimes
 
 # Optional Makie support
 const HAS_MAKIE = Ref(false)
@@ -61,6 +61,23 @@ function __init__()
     catch
         HAS_MAKIE[] = false
     end
+end
+
+# Supported MIME types for serialization
+const SUPPORTED_MIMES = Dict(
+    "image/png" => "png",
+    "image/svg+xml" => "svg",
+    "application/pdf" => "pdf",
+    "image/jpeg" => "jpg",
+)
+
+"""
+    supported_mimes() -> Vector{MIME}
+
+Returns the list of supported MIME types for graphics output.
+"""
+function supported_mimes()
+    return [MIME(m) for m in keys(SUPPORTED_MIMES)]
 end
 
 const FRAME_HEADER_BYTES = 8
@@ -76,7 +93,7 @@ end
 const _socket_display_ref = Ref{Union{SocketDisplay, Nothing}}(nothing)
 
 # helper factory
-function _make_socket_display(fmt_priority=(MIME("image/png"), MIME("image/svg+xml")))
+function _make_socket_display(fmt_priority=(MIME("image/svg+xml"), MIME("image/png")))
     # Add Makie-specific MIME if Makie is available
     if HAS_MAKIE[]
         fmt_priority = (fmt_priority..., MIME("image/png"))  # Ensure PNG is included for Makie
@@ -117,7 +134,7 @@ function Base.display(d::SocketDisplay, x)
     end
 
     # Special handling for Makie figures if Makie is available
-    if HAS_MAKIE[] && x isa Makie.Figure
+    if HAS_MAKIE[] && (x isa Makie.Figure || x isa Makie.FigureAxisPlot)
         try
             # Convert Makie figure to PNG
             io = IOBuffer()
@@ -141,11 +158,12 @@ function Base.display(d::SocketDisplay, x)
     end
 
     for m in d.fmt_priority
-        # используем showable из Base.Multimedia
-        if showable(m, x)
+        # Use string MIME for compatibility with Plots.jl
+        mime_str = string(m)
+        if showable(mime_str, x)
             io = IOBuffer()
             try
-                show(io, m, x)
+                show(io, mime_str, x)
             catch err
                 @warn "SocketDisplay: error serializing MIME $m: $err"
                 continue
@@ -174,7 +192,7 @@ end
 
 # ----------------- SERVER -----------------
 """
-    start_server!(port; fmt_priority=(MIME("image/png"), MIME("image/svg+xml")))
+    start_server!(port; fmt_priority=(MIME("image/svg+xml"), MIME("image/png")))
 
 Start a TCP server that accepts clients. Connected clients will receive frames
 (8-byte big-endian length + payload). The server listens on all interfaces.
@@ -197,7 +215,7 @@ using SocketPlotDisplay
 sd = start_server!(9000)
 ```
 """
-function start_server!(port::Integer; fmt_priority=(MIME("image/png"), MIME("image/svg+xml")))
+function start_server!(port::Integer; fmt_priority=(MIME("image/svg+xml"), MIME("image/png")))
     # Validate port number
     if !(1024 <= port <= 65535)
         throw(ArgumentError("Port must be between 1024 and 65535"))
@@ -278,7 +296,7 @@ end
 
 # ----------------- CLIENT (Julia как клиент) -----------------
 """
-    connect_client!(host, port; fmt_priority=(MIME("image/png"), MIME("image/svg+xml")), attempts=5, delay=0.5)
+    connect_client!(host, port; fmt_priority=(MIME("image/svg+xml"), MIME("image/png")), attempts=5, delay=0.5)
 
 Attempt to connect to an external receiver. On success, adds TCPSocket to clients.
 
@@ -303,7 +321,7 @@ using SocketPlotDisplay
 sock = connect_client!("127.0.0.1", 9000)
 ```
 """
-function connect_client!(host::AbstractString, port::Integer; fmt_priority=(MIME("image/png"), MIME("image/svg+xml")), attempts::Int=5, delay::Float64=0.5)
+function connect_client!(host::AbstractString, port::Integer; fmt_priority=(MIME("image/svg+xml"), MIME("image/png")), attempts::Int=5, delay::Float64=0.5)
     # Validate inputs
     if isempty(host)
         throw(ArgumentError("Host cannot be empty"))

@@ -1,44 +1,45 @@
 # Julia startup script for graphics redirection
-# This script is generated based on project configuration
+# Loads both Plots and Makie support
 
-# Load required packages
-using Plots
-
-# Check graphics redirection method from environment variables
 const GRAPHICS_METHOD = get(ENV, "JULIA_GRAPHICS_METHOD", "file")
 const GRAPHICS_DIR = get(ENV, "JULIA_GRAPHICS_DIR", "/tmp/graphics")
 const SOCKET_HOST = get(ENV, "JULIA_SOCKET_HOST", "localhost")
 const SOCKET_PORT = parse(Int, get(ENV, "JULIA_SOCKET_PORT", "8080"))
 
+# Ensure directory exists
 if GRAPHICS_METHOD == "file"
-    # File-based graphics redirection
-    try
-        # Import the FilePlotDisplay module
-        include(joinpath(@__DIR__,"graphics", "FilePlotDisplay.jl"))
-        using .FilePlotDisplay
+    if !isdir(GRAPHICS_DIR)
+        mkpath(GRAPHICS_DIR)
+    end
+end
 
-        # Activate file-based display
+if GRAPHICS_METHOD == "file"
+    try
+        # Load Plots support (for Plots.jl users)
+        include(joinpath(@__DIR__, "graphics", "FilePlotDisplay.jl"))
+        using .FilePlotDisplay
         FilePlotDisplay.activate!(GRAPHICS_DIR)
-        println("Graphics redirection activated: File-based to directory '$GRAPHICS_DIR'")
+        
+        # Load Makie support (for CairoMakie.jl users)
+        include(joinpath(@__DIR__, "graphics", "MakiePlotDisplay.jl"))
+        using .MakiePlotDisplay
+        MakiePlotDisplay.activate!(GRAPHICS_DIR; format=:svg)
+        
+        println("Graphics: Plots and Makie ready")
     catch err
-        @warn "Failed to activate file-based graphics redirection: $err"
+        @warn "Graphics init failed: $err"
     end
 
 elseif GRAPHICS_METHOD == "socket"
-    # TCP socket graphics redirection
     try
-        # Import the SocketPlotDisplay module
-        include(joinpath(@__DIR__,"graphics", "SocketPlotDisplay.jl"))
+        include(joinpath(@__DIR__, "graphics", "SocketPlotDisplay.jl"))
         using .SocketPlotDisplay
-
-        # Connect as client to KDevelop's graphics server
         SocketPlotDisplay.connect_client!(SOCKET_HOST, SOCKET_PORT)
         SocketPlotDisplay.activate!()
-        println("Graphics redirection activated: TCP client connected to $SOCKET_HOST:$SOCKET_PORT")
+        println("Socket graphics ready")
     catch err
-        @warn "Failed to activate socket-based graphics redirection: $err"
+        @warn "Socket failed: $err"
     end
-
 else
-    @warn "Unknown graphics method: $GRAPHICS_METHOD. Supported: 'file', 'socket'"
+    @warn "Unknown: $GRAPHICS_METHOD"
 end
