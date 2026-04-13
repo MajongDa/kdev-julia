@@ -20,7 +20,7 @@
 #include <language/duchain/functiondeclaration.h>
 #include <language/duchain/aliasdeclaration.h>
 
-#include "../parser/ast.h"
+#include "parser/ast.h"
 #include "juliadebug.h"
 
 using namespace KDevelop;

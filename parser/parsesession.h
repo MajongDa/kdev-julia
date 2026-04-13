@@ -45,12 +45,12 @@ public:
     /**
      * Set the parsed AST
      */
-    void setAst(AstNode* ast);
+    void setAst(Ast* ast);
     
     /**
      * Get the parsed AST
      */
-    AstNode* ast() const;
+    Ast* ast() const;
     
     /**
      * Set the TopDUContext

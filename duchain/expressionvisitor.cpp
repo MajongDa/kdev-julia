@@ -33,15 +33,6 @@ static bool isOperatorSymbol(const QString& text)
     return operators.contains(text);
 }
 
-// TODO: NothingType for Julia
-// Current: Using IntegralType::TypeVoid which doesn't properly represent Julia's semantics
-// - `nothing`: Singleton representing absence of value (like Python's None)
-// - `missing`: Singleton representing missing value (like Nullable in other languages)
-// Need custom type to:
-// 1. Override toString() to show "nothing" or "missing"
-// 2. Enable proper type checking in code completion
-// See Python's NoneType for reference (kdev-python/duchain/types/nonetype.h)
-
 ExpressionVisitor::ExpressionVisitor(const KDevelop::DUContext* ctx)
     : KDevelop::DynamicLanguageExpressionVisitor(ctx)
 {
@@ -65,18 +56,19 @@ KDevelop::AbstractType::Ptr ExpressionVisitor::encounterPreprocess(KDevelop::Abs
     return Helper::resolveAliasType(type);
 }
 
-void ExpressionVisitor::visitIdentifier(AstNode* node)
+void ExpressionVisitor::visitIdentifier(IdentifierAst* node)
 {
-    if (!node || node->kind() != NodeKind::Identifier) {
+    if (!node || node->astType != AstType::IdentifierAstType) {
         return;
     }
 
-    QString name = node->text();
+    if (!node) {
+        encounterUnknown();
+        return;
+    }
+
+    QString name = node->value;
     
-    // Skip operator symbols - JuliaSyntax parses operators like "+", "-", "*" as Identifier nodes
-    // They should not trigger identifier resolution
-    // TODO: Once parser/ast.cpp operator mapping is implemented, this check may no longer be needed
-    // because operators will have NodeKind::Operator instead of NodeKind::Identifier
     if (isOperatorSymbol(name)) {
         return;
     }
@@ -86,13 +78,11 @@ void ExpressionVisitor::visitIdentifier(AstNode* node)
         return;
     }
 
-    // Use the actual cursor position from the node for more accurate declaration lookup
     KDevelop::CursorInRevision searchPos = node->range().start;
     
     qCDebug(KDEV_JULIA) << "  ExpressionVisitor: Looking up identifier:" << name 
                          << "in context:" << context() << "at position:" << searchPos;
     
-    // Use Helper::declarationForName like Python does
     KDevelop::Declaration* decl = Helper::declarationForName(name, searchPos, context());
     
     if (decl) {
@@ -110,7 +100,7 @@ void ExpressionVisitor::visitIdentifier(AstNode* node)
     encounterUnknown();
 }
 
-void ExpressionVisitor::visitCall(CallNode* node)
+void ExpressionVisitor::visitCall(CallAst* node)
 {
     if (!node) {
         return;
@@ -125,7 +115,7 @@ void ExpressionVisitor::visitCall(CallNode* node)
         return;
     }
 
-    AstNode* funcNode = node->firstChild();
+    Ast* funcNode = node->function;
     if (!funcNode) {
         qCDebug(KDEV_JULIA) << "  No function node, returning unknown";
         encounterUnknown();
@@ -151,7 +141,6 @@ void ExpressionVisitor::visitCall(CallNode* node)
             return;
         }
         if (auto st = funcType.dynamicCast<KDevelop::StructureType>()) {
-            // Constructor call like Point(1, 2) - return the struct type (instance of this type)
             qCDebug(KDEV_JULIA) << "  Returning structure type (constructor):" << st->toString();
             encounter(st);
             return;
@@ -162,26 +151,107 @@ void ExpressionVisitor::visitCall(CallNode* node)
     encounterUnknown();
 }
 
-void ExpressionVisitor::visitOperator(AstNode* node)
+void ExpressionVisitor::visitAttribute(AttributeAst* node)
 {
-    if (!node) {
+    if (!node || !node->value) {
+        encounterUnknown();
         return;
     }
     
-    QString op = node->text().trimmed();
+    ExpressionVisitor valueVisitor(this);
+    valueVisitor.visitNode(node->value);
     
-    if (op == QLatin1String("+") || op == QLatin1String("-") || 
-        op == QLatin1String("*") || op == QLatin1String("/") ||
-        op == QLatin1String("^") || op == QLatin1String("%")) {
-        auto intType = KDevelop::AbstractType::Ptr(new KDevelop::IntegralType(KDevelop::IntegralType::TypeMixed));
-        encounter(intType);
+    if (!valueVisitor.lastType()) {
+        encounterUnknown();
         return;
     }
     
-    if (op == QLatin1String("==") || op == QLatin1String("!=") ||
-        op == QLatin1String("<") || op == QLatin1String(">") ||
-        op == QLatin1String("<=") || op == QLatin1String(">=") ||
-        op == QLatin1String("&&") || op == QLatin1String("||")) {
+    if (node->attribute) {
+        KDevelop::DUChainReadLocker lock(KDevelop::DUChain::lock());
+        KDevelop::Declaration* decl = Helper::accessAttribute(valueVisitor.lastType(), node->attribute->value, topContext());
+        
+        if (decl && decl->abstractType()) {
+            encounter(decl->abstractType(), KDevelop::DeclarationPointer(decl));
+            return;
+        }
+    }
+    
+    setConfident(false);
+    encounterUnknown();
+}
+
+static QString binaryOpToString(BinaryOperationAst::Operator op)
+{
+    switch (op) {
+        case BinaryOperationAst::Operator::Add: return QStringLiteral("+");
+        case BinaryOperationAst::Operator::Sub: return QStringLiteral("-");
+        case BinaryOperationAst::Operator::Mul: return QStringLiteral("*");
+        case BinaryOperationAst::Operator::Div: return QStringLiteral("/");
+        case BinaryOperationAst::Operator::FloorDiv: return QStringLiteral("÷");
+        case BinaryOperationAst::Operator::Mod: return QStringLiteral("%");
+        case BinaryOperationAst::Operator::Pow: return QStringLiteral("^");
+        case BinaryOperationAst::Operator::And: return QStringLiteral("&&");
+        case BinaryOperationAst::Operator::Or: return QStringLiteral("||");
+        case BinaryOperationAst::Operator::Eq: return QStringLiteral("==");
+        case BinaryOperationAst::Operator::Ne: return QStringLiteral("!=");
+        case BinaryOperationAst::Operator::Lt: return QStringLiteral("<");
+        case BinaryOperationAst::Operator::Le: return QStringLiteral("<=");
+        case BinaryOperationAst::Operator::Gt: return QStringLiteral(">");
+        case BinaryOperationAst::Operator::Ge: return QStringLiteral(">=");
+        default: return QString();
+    }
+}
+
+static QString unaryOpToString(UnaryOperationAst::Operator op)
+{
+    switch (op) {
+        case UnaryOperationAst::Operator::UAdd: return QStringLiteral("+");
+        case UnaryOperationAst::Operator::USub: return QStringLiteral("-");
+        case UnaryOperationAst::Operator::Not: return QStringLiteral("!");
+        case UnaryOperationAst::Operator::Invert: return QStringLiteral("~");
+        default: return QString();
+    }
+}
+
+void ExpressionVisitor::visitBinaryOperation(BinaryOperationAst* node)
+{
+    if (!node || !node->left || !node->right) {
+        encounterUnknown();
+        return;
+    }
+    
+    ExpressionVisitor lhsVisitor(this);
+    ExpressionVisitor rhsVisitor(this);
+    
+    lhsVisitor.visitNode(node->left);
+    rhsVisitor.visitNode(node->right);
+    
+    QString opStr = binaryOpToString(node->op);
+    
+    if (!opStr.isEmpty()) {
+        processBinaryOperator(lhsVisitor.lastType(), rhsVisitor.lastType(), opStr);
+    } else {
+        encounterUnknown();
+    }
+}
+
+void ExpressionVisitor::visitUnaryOperation(UnaryOperationAst* node)
+{
+    if (!node || !node->operand) {
+        encounterUnknown();
+        return;
+    }
+    
+    ExpressionVisitor operandVisitor(this);
+    operandVisitor.visitNode(node->operand);
+    
+    QString opStr = unaryOpToString(node->op);
+    
+    if (opStr == QStringLiteral("-") || opStr == QStringLiteral("+")) {
+        encounter(operandVisitor.lastType());
+        return;
+    }
+    if (opStr == QStringLiteral("!")) {
         auto boolType = KDevelop::AbstractType::Ptr(new KDevelop::IntegralType(KDevelop::IntegralType::TypeBoolean));
         encounter(boolType);
         return;
@@ -190,118 +260,30 @@ void ExpressionVisitor::visitOperator(AstNode* node)
     encounterUnknown();
 }
 
-void ExpressionVisitor::visitString(AstNode* node)
+void ExpressionVisitor::visitString(StringAst* node)
 {
-    // TODO: String interpolation support
-    // Current: Returns String type for all strings
-    // Problem: "$x and $y" should infer type from interpolated variables
-    // - Parse string content to find $variable or $(expression) patterns
-    // - Visit each interpolated expression to get its type
-    // - If mixed types, return UnsureType; if all same, return that type
-    // See Python's string formatting handling for reference
-    
-    if (!node) {
-        return;
-    }
-    
     auto stringType = KDevelop::AbstractType::Ptr(new KDevelop::IntegralType(KDevelop::IntegralType::TypeString));
     encounter(stringType);
 }
 
-void ExpressionVisitor::visitFloat(AstNode* node)
+void ExpressionVisitor::visitNumber(NumberAst* node)
 {
-    if (!node) {
-        return;
-    }
-    
-    auto floatType = KDevelop::AbstractType::Ptr(new KDevelop::IntegralType(KDevelop::IntegralType::TypeMixed));
-    encounter(floatType);
+    auto numType = KDevelop::AbstractType::Ptr(new KDevelop::IntegralType(KDevelop::IntegralType::TypeMixed));
+    encounter(numType);
 }
 
-void ExpressionVisitor::visitInteger(AstNode* node)
+void ExpressionVisitor::visitList(ListAst* node)
 {
-    if (!node) {
-        return;
-    }
-    
-    auto intType = KDevelop::AbstractType::Ptr(new KDevelop::IntegralType(KDevelop::IntegralType::TypeInt));
-    encounter(intType);
-}
-
-void ExpressionVisitor::visitBool(AstNode* node)
-{
-    if (!node) {
-        return;
-    }
-    
-    auto boolType = KDevelop::AbstractType::Ptr(new KDevelop::IntegralType(KDevelop::IntegralType::TypeBoolean));
-    encounter(boolType);
-}
-
-void ExpressionVisitor::visitTuple(AstNode* node)
-{
-    // TODO: TupleType for Julia
-    // Current: Using UnsureType for heterogeneous tuples
-    // Problem: UnsureType doesn't preserve order of element types
-    // - (Int, String, Float64) should be distinguishable from (String, Int, Float64)
-    // Custom TupleType would preserve ordered list of element types
-    
-    if (!node) {
-        encounterUnknown();
-        return;
-    }
-    
-    QList<AstNode*> children = node->children();
-    if (children.isEmpty()) {
+    if (!node || node->elements.isEmpty()) {
         encounterUnknown();
         return;
     }
     
     QList<KDevelop::AbstractType::Ptr> elementTypes;
-    for (AstNode* child : children) {
-        if (!child) continue;
+    for (auto* elem : node->elements) {
+        if (!elem) continue;
         ExpressionVisitor elemVisitor(this);
-        elemVisitor.visitNode(child);
-        if (elemVisitor.lastType()) {
-            elementTypes.append(elemVisitor.lastType());
-        }
-    }
-    
-    if (elementTypes.isEmpty()) {
-        encounterUnknown();
-        return;
-    }
-    
-    if (elementTypes.size() == 1) {
-        encounter(elementTypes.first());
-        return;
-    }
-    
-    auto* unsure = new KDevelop::UnsureType();
-    for (const auto& t : elementTypes) {
-        unsure->addType(t->indexed());
-    }
-    encounter(KDevelop::AbstractType::Ptr(unsure));
-}
-
-void ExpressionVisitor::visitArray(AstNode* node)
-{
-    if (!node) {
-        encounterUnknown();
-        return;
-    }
-    
-    QList<AstNode*> children = node->children();
-    if (children.isEmpty()) {
-        encounterUnknown();
-        return;
-    }
-    
-    QList<KDevelop::AbstractType::Ptr> elementTypes;
-    for (AstNode* child : children) {
-        if (!child) continue;
-        ExpressionVisitor elemVisitor(this);
-        elemVisitor.visitNode(child);
+        elemVisitor.visitNode(elem);
         if (elemVisitor.lastType()) {
             elementTypes.append(elemVisitor.lastType());
         }
@@ -336,123 +318,44 @@ void ExpressionVisitor::visitArray(AstNode* node)
     }
 }
 
-void ExpressionVisitor::visitDict(AstNode* node)
+void ExpressionVisitor::visitTuple(TupleAst* node)
 {
-    // TODO: Full Dict/Map type support
-    // Current: Falling back to UnsureType for dict literals
-    // Problem: Dict(:a => 1, :b => 2) should show key/value types
-    
-    if (!node) {
+    if (!node || node->elements.isEmpty()) {
         encounterUnknown();
         return;
     }
     
-    QList<AstNode*> children = node->children();
-    if (children.isEmpty()) {
-        encounterUnknown();
-        return;
-    }
-    
-    setConfident(false);
-    encounterUnknown();
-}
-
-void ExpressionVisitor::visitTypeAnnotation(AstNode* node)
-{
-    // TypeAnnotation node: "x::Type" 
-    // Children: [identifier, type]
-    // Last child is the type node
-    
-    if (!node) {
-        encounterUnknown();
-        return;
-    }
-    
-    AstNode* typeNode = node->lastChild();
-    if (!typeNode) {
-        encounterUnknown();
-        return;
-    }
-    
-    // Delegate based on node kind
-    switch (typeNode->kind()) {
-        case NodeKind::Identifier: {
-            // x::Int - look up in context (try user type first, then builtin)
-            QString typeName = typeNode->text();
-            
-            // Try to find user-defined type in context first
-            KDevelop::Declaration* decl = Helper::declarationForName(typeName, typeNode->range().start, context());
-            if (decl && decl->abstractType()) {
-                encounter(decl->abstractType(), KDevelop::DeclarationPointer(decl));
-                return;
-            }
-            
-            // Fall back to TypeMapper for builtins
-            // Note: TypeMapper uses context for user type lookup, which won't work for const context
-            // But for builtins it doesn't need the context
-            KDevelop::AbstractType* type = TypeMapper::typeFromString(typeName, nullptr);
-            if (type) {
-                encounter(KDevelop::AbstractType::Ptr(type));
-                return;
-            }
-            
-            encounterUnknown();
-            break;
+    QList<KDevelop::AbstractType::Ptr> elementTypes;
+    for (auto* elem : node->elements) {
+        if (!elem) continue;
+        ExpressionVisitor elemVisitor(this);
+        elemVisitor.visitNode(elem);
+        if (elemVisitor.lastType()) {
+            elementTypes.append(elemVisitor.lastType());
         }
-        
-        case NodeKind::Curly:
-            // x::Array{Int} or x::Dict{String, Float64}
-            // Delegate to visitCurly which handles parametric types
-            visitCurly(static_cast<CurlyNode*>(typeNode));
-            break;
-        
-        case NodeKind::Dot:
-            // x::Base.Vector - module qualified type
-            // TODO: Handle module-qualified types like Base.Vector
-            setConfident(false);
-            encounterUnknown();
-            break;
-        
-        default:
-            setConfident(false);
-            encounterUnknown();
-            break;
     }
+    
+    if (elementTypes.isEmpty()) {
+        encounterUnknown();
+        return;
+    }
+    
+    if (elementTypes.size() == 1) {
+        encounter(elementTypes.first());
+        return;
+    }
+    
+    auto* unsure = new KDevelop::UnsureType();
+    for (const auto& t : elementTypes) {
+        unsure->addType(t->indexed());
+    }
+    encounter(KDevelop::AbstractType::Ptr(unsure));
 }
 
-void ExpressionVisitor::visitDot(AstNode* node)
+void ExpressionVisitor::visitDict(DictAst* node)
 {
-    if (!node) {
+    if (!node || node->keys.isEmpty()) {
         encounterUnknown();
-        return;
-    }
-    
-    QList<AstNode*> children = node->children();
-    if (children.size() < 2) {
-        encounterUnknown();
-        return;
-    }
-    
-    AstNode* lhs = children.first();
-    AstNode* attr = children.last();
-    if (!lhs || !attr) {
-        encounterUnknown();
-        return;
-    }
-    
-    ExpressionVisitor lhsVisitor(this);
-    lhsVisitor.visitNode(lhs);
-    
-    if (!lhsVisitor.lastType()) {
-        encounterUnknown();
-        return;
-    }
-    
-    KDevelop::DUChainReadLocker lock(KDevelop::DUChain::lock());
-    KDevelop::Declaration* decl = Helper::accessAttribute(lhsVisitor.lastType(), attr->text(), topContext());
-    
-    if (decl && decl->abstractType()) {
-        encounter(decl->abstractType(), KDevelop::DeclarationPointer(decl));
         return;
     }
     
@@ -460,132 +363,36 @@ void ExpressionVisitor::visitDot(AstNode* node)
     encounterUnknown();
 }
 
-void ExpressionVisitor::visitCurly(CurlyNode* node)
+void ExpressionVisitor::visitSubscript(SubscriptAst* node)
 {
-    if (!node) {
+    if (!node || !node->value) {
         encounterUnknown();
         return;
     }
     
-    QList<AstNode*> children = node->children();
-    if (children.isEmpty()) {
-        encounterUnknown();
-        return;
-    }
+    ExpressionVisitor valueVisitor(this);
+    valueVisitor.visitNode(node->value);
     
-    AstNode* baseType = children.first();
+    auto baseType = valueVisitor.lastType();
     if (!baseType) {
         encounterUnknown();
         return;
     }
     
-    QString baseName = baseType->text();
-    
-    QList<KDevelop::AbstractType::Ptr> typeParams;
-    for (int i = 1; i < children.size(); i++) {
-        if (!children[i]) continue;
-        ExpressionVisitor paramVisitor(this);
-        paramVisitor.visitNode(children[i]);
-        if (paramVisitor.lastType()) {
-            typeParams.append(paramVisitor.lastType());
-        }
-    }
-    
-    if (baseName == QLatin1String("Array") && !typeParams.isEmpty()) {
-        auto* arrayType = new KDevelop::ArrayType();
-        arrayType->setElementType(typeParams.first());
-        encounter(KDevelop::AbstractType::Ptr(arrayType));
+    if (auto arrayType = baseType.dynamicCast<KDevelop::ArrayType>()) {
+        encounter(arrayType->elementType());
         return;
     }
     
-    if (baseName == QLatin1String("Dict") && typeParams.size() >= 2) {
-        auto* mapType = new KDevelop::MapType();
-        mapType->replaceKeyType(typeParams[0]);
-        mapType->replaceContentType(typeParams[1]);
-        encounter(KDevelop::AbstractType::Ptr(mapType));
-        return;
-    }
-    
-    if (baseName == QLatin1String("Tuple") && !typeParams.isEmpty()) {
-        auto* unsure = new KDevelop::UnsureType();
-        for (const auto& t : typeParams) {
-            unsure->addType(t->indexed());
-        }
-        encounter(KDevelop::AbstractType::Ptr(unsure));
-        return;
-    }
-    
-    KDevelop::StructureType::Ptr structType(new KDevelop::StructureType());
-    encounter(structType);
-}
-
-void ExpressionVisitor::visitBinaryOperation(AstNode* node)
-{
-    if (!node) {
-        encounterUnknown();
-        return;
-    }
-    
-    QList<AstNode*> children = node->children();
-    if (children.size() < 3) {
-        encounterUnknown();
-        return;
-    }
-    
-    AstNode* lhs = children[0];
-    AstNode* op = children[1];
-    AstNode* rhs = children[2];
-    
-    ExpressionVisitor lhsVisitor(this);
-    ExpressionVisitor rhsVisitor(this);
-    
-    lhsVisitor.visitNode(lhs);
-    rhsVisitor.visitNode(rhs);
-    
-    if (op) {
-        processBinaryOperator(lhsVisitor.lastType(), rhsVisitor.lastType(), op->text());
-    } else {
-        encounterUnknown();
-    }
-}
-
-void ExpressionVisitor::visitUnaryOperation(AstNode* node)
-{
-    if (!node) {
-        encounterUnknown();
-        return;
-    }
-    
-    QList<AstNode*> children = node->children();
-    if (children.size() < 2) {
-        encounterUnknown();
-        return;
-    }
-    
-    AstNode* operand = children[1];
-    ExpressionVisitor operandVisitor(this);
-    operandVisitor.visitNode(operand);
-    
-    QString op = children.size() > 0 ? children[0]->text() : QString();
-    
-    if (op == QLatin1String("-") || op == QLatin1String("+")) {
-        encounter(operandVisitor.lastType());
-        return;
-    }
-    if (op == QLatin1String("!")) {
-        auto boolType = KDevelop::AbstractType::Ptr(new KDevelop::IntegralType(KDevelop::IntegralType::TypeBoolean));
-        encounter(boolType);
-        return;
-    }
-    
+    setConfident(false);
     encounterUnknown();
 }
 
 void ExpressionVisitor::processBinaryOperator(KDevelop::AbstractType::Ptr lhs, KDevelop::AbstractType::Ptr rhs, const QString& op)
 {
-    if (op == QLatin1String("+") || op == QLatin1String("-") || 
-        op == QLatin1String("*") || op == QLatin1String("/") ||
-        op == QLatin1String("^") || op == QLatin1String("%")) {
+    if (op == QStringLiteral("+") || op == QStringLiteral("-") || 
+        op == QStringLiteral("*") || op == QStringLiteral("/") ||
+        op == QStringLiteral("^") || op == QStringLiteral("%")) {
         
         if (lhs && rhs) {
             encounter(lhs);
@@ -596,9 +403,9 @@ void ExpressionVisitor::processBinaryOperator(KDevelop::AbstractType::Ptr lhs, K
         return;
     }
     
-    if (op == QLatin1String("==") || op == QLatin1String("!=") ||
-        op == QLatin1String("<") || op == QLatin1String(">") ||
-        op == QLatin1String("<=") || op == QLatin1String(">=")) {
+    if (op == QStringLiteral("==") || op == QStringLiteral("!=") ||
+        op == QStringLiteral("<") || op == QStringLiteral(">") ||
+        op == QStringLiteral("<=") || op == QStringLiteral(">=")) {
         auto boolType = KDevelop::AbstractType::Ptr(new KDevelop::IntegralType(KDevelop::IntegralType::TypeBoolean));
         encounter(boolType);
         return;

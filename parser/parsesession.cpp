@@ -9,7 +9,7 @@ class ParseSessionData
 public:
     QUrl url;
     QString sourceCode;
-    AstNode* ast = nullptr;
+    Ast* ast = nullptr;
     KDevelop::TopDUContext* topContext = nullptr;
     bool success = false;
     QString errorMessage;
@@ -42,12 +42,12 @@ QString ParseSession::sourceCode() const
     return d->sourceCode;
 }
 
-void ParseSession::setAst(AstNode* ast)
+void ParseSession::setAst(Ast* ast)
 {
     d->ast = ast;
 }
 
-AstNode* ParseSession::ast() const
+Ast* ParseSession::ast() const
 {
     return d->ast;
 }

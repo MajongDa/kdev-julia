@@ -8,7 +8,7 @@
 
 namespace Julia {
 
-class AstNode;
+class Ast;
 
 class JuliaEditorIntegrator
 {
@@ -26,9 +26,9 @@ public:
         OuterEdge
     };
 
-    KDevelop::CursorInRevision findPosition(const AstNode* node, Edge edge = BackEdge) const;
-    KDevelop::RangeInRevision findRange(const AstNode* node, RangeEdge edge = OuterEdge) const;
-    KDevelop::RangeInRevision findRange(const AstNode* from, const AstNode* to) const;
+    KDevelop::CursorInRevision findPosition(const Ast* node, Edge edge = BackEdge) const;
+    KDevelop::RangeInRevision findRange(const Ast* node, RangeEdge edge = OuterEdge) const;
+    KDevelop::RangeInRevision findRange(const Ast* from, const Ast* to) const;
 };
 
 }

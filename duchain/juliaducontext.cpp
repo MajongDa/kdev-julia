@@ -1,4 +1,4 @@
-#include "juliaducontext.h"
+#include <QDebug>
 
 #include <language/duchain/topducontext.h>
 #include <language/duchain/topducontextdata.h>
@@ -8,9 +8,9 @@
 #include <language/duchain/navigation/abstractnavigationwidget.h>
 #include <language/duchain/navigation/abstractdeclarationnavigationcontext.h>
 
-#include <QDebug>
 
 #include "navigation/navigationwidget.h"
+#include "juliaducontext.h"
 #include "juliadebug.h"
 
 using namespace KDevelop;

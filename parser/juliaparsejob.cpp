@@ -13,6 +13,7 @@
 #include <interfaces/ilanguagecontroller.h>
 
 #include "juliabridge.h"
+#include "asttransformer.h"
 #include "../duchain/contextbuilder.h"
 #include "../duchain/declarationbuilder.h"
 #include "../duchain/usebuilder.h"
@@ -96,7 +97,7 @@ bool JuliaParseJob::parseWithJuliaBridge(const QString& content)
     qCDebug(KDEV_JULIA) << jsonStr;
     qCDebug(KDEV_JULIA) << "=== END JSON ===";
 
-    AstNode* ast = parseJsonResponse(json);
+    Ast* ast = parseJsonResponse(json);
     if (!ast) {
         qCDebug(KDEV_JULIA) << "Failed to parse JSON response";
         return false;
@@ -116,17 +117,20 @@ bool JuliaParseJob::parseWithJuliaBridge(const QString& content)
         delete ast;
         return false;
     }
-
+    qCDebug(KDEV_JULIA) << static_cast<int>(ast->astType);
     delete ast;
-    return true;
+    qCDebug(KDEV_JULIA()) << "Parsing global scope CodeAst";
+    return false;
 }
 
-AstNode* JuliaParseJob::parseJsonResponse(const QByteArray& json)
+Ast* JuliaParseJob::parseJsonResponse(const QByteArray& json)
 {
-    return AstNode::parseJson(json);
+    AstTransformer transformer;
+    CodeAst* code = transformer.parse(json);
+    return code;
 }
 
-bool JuliaParseJob::buildDUChain(AstNode* ast)
+bool JuliaParseJob::buildDUChain(Ast* ast)
 {
     if (!ast) {
         return false;
@@ -218,7 +222,7 @@ bool JuliaParseJob::buildDUChain(AstNode* ast)
                                  << "usesCount:" << ctx->usesCount();
             
             // List uses in this context
-            for (uint i = 0; i < ctx->usesCount(); i++) {
+            for (auto i = 0; i < ctx->usesCount(); i++) {
                 const KDevelop::Use& use = ctx->uses()[i];
                 qCDebug(KDEV_JULIA) << "  Use[" << i << "] range:" << use.m_range 
                                      << "declIndex:" << use.m_declarationIndex;

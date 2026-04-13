@@ -1,6 +1,6 @@
 #include "juliaeditorintegrator.h"
 
-#include "../parser/ast.h"
+#include "parser/ast.h"
 
 namespace Julia {
 
@@ -12,7 +12,7 @@ JuliaEditorIntegrator::~JuliaEditorIntegrator()
 {
 }
 
-KDevelop::CursorInRevision JuliaEditorIntegrator::findPosition(const AstNode* node, Edge edge) const
+KDevelop::CursorInRevision JuliaEditorIntegrator::findPosition(const Ast* node, Edge edge) const
 {
     if (!node) {
         return KDevelop::CursorInRevision::invalid();
@@ -26,13 +26,13 @@ KDevelop::CursorInRevision JuliaEditorIntegrator::findPosition(const AstNode* no
     }
 }
 
-KDevelop::RangeInRevision JuliaEditorIntegrator::findRange(const AstNode* node, RangeEdge edge) const
+KDevelop::RangeInRevision JuliaEditorIntegrator::findRange(const Ast* node, RangeEdge edge) const
 {
     Q_UNUSED(edge);
     return KDevelop::RangeInRevision(findPosition(node, FrontEdge), findPosition(node, BackEdge));
 }
 
-KDevelop::RangeInRevision JuliaEditorIntegrator::findRange(const AstNode* from, const AstNode* to) const
+KDevelop::RangeInRevision JuliaEditorIntegrator::findRange(const Ast* from, const Ast* to) const
 {
     return KDevelop::RangeInRevision(findPosition(from, FrontEdge), findPosition(to, BackEdge));
 }

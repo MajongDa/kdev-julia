@@ -25,8 +25,8 @@ protected:
 
 private:
     bool parseWithJuliaBridge(const QString& content);
-    Julia::AstNode* parseJsonResponse(const QByteArray& json);
-    bool buildDUChain(Julia::AstNode* ast);
+    Julia::Ast* parseJsonResponse(const QByteArray& json);
+    bool buildDUChain(Julia::Ast* ast);
 
     std::unique_ptr<JuliaBridge> m_bridge;
     KDevelop::ReferencedTopDUContext m_topContext;

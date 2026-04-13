@@ -5,9 +5,7 @@
 
 #include <QVector>
 
-#include "../parser/ast.h"
-#include "astvisitor.h"
-#include "juliaastdefaultvisitor.h"
+#include "parser/juliaastdefaultvisitor.h"
 #include "juliaducontext.h"
 
 namespace Julia {
@@ -15,12 +13,8 @@ namespace Julia {
 class JuliaEditorIntegrator;
 
 // ContextBuilder: Builds the scope/context tree for the DUChain
-// Note: We use AstNode for both template parameters (T and NameT).
-// This works because:
-// 1. identifierForNode() extracts text from any AstNode via node->text()
-// 2. Virtual dispatch works correctly for visitNode() methods
-// 3. The vtable allows derived classes to override specific visit methods
-class ContextBuilder : public KDevelop::AbstractContextBuilder<Julia::AstNode, Julia::AstNode>, public JuliaAstDefaultVisitor
+// Uses new Python-style AST with Ast and Identifier classes
+class ContextBuilder : public KDevelop::AbstractContextBuilder<Ast, IdentifierAst>, public JuliaAstDefaultVisitor
 {
 public:
     ContextBuilder();
@@ -30,43 +24,41 @@ public:
     JuliaEditorIntegrator* editor() const;
 
 protected:
-    void startVisiting(AstNode* node) override;
+    void startVisiting(Ast* node) override;
 
-    KDevelop::DUContext* contextFromNode(AstNode* node) override;
-    virtual void setContextOnNode(AstNode* node, KDevelop::DUContext* context) override;
-    KDevelop::RangeInRevision editorFindRange(AstNode* fromNode, AstNode* toNode) override;
-    KDevelop::RangeInRevision editorFindRangeForContext(AstNode* fromNode, AstNode* toNode) override;
-    KDevelop::QualifiedIdentifier identifierForNode(AstNode* node) override;
+    KDevelop::DUContext* contextFromNode(Ast* node) override;
+    virtual void setContextOnNode(Ast* node, KDevelop::DUContext* context) override;
+    KDevelop::RangeInRevision editorFindRange(Ast* fromNode, Ast* toNode) override;
+    KDevelop::RangeInRevision editorFindRangeForContext(Ast* fromNode, Ast* toNode) override;
+    KDevelop::QualifiedIdentifier identifierForNode(IdentifierAst* node) override;
 
-    // Container nodes - override to handle specially
-    void visitTopLevel(AstNode* node) override;
-    void visitFunction(FunctionNode* node) override;
-    void visitStruct(StructNode* node) override;
-    void visitStructBody(StructNode* node);
-    void visitModule(AstNode* node) override;
-    void visitModuleBody(AstNode* node);
-    void visitBaremodule(BaremoduleNode* node) override;
-    void visitBaremoduleBody(AstNode* node);
-    void visitAbstract(AstNode* node) override;
-    void visitAbstractBody(AstNode* node);
-    void visitPrimitive(AstNode* node) override;
-    void visitPrimitiveBody(AstNode* node);
-    void visitBlock(AstNode* node) override;
-    void visitTry(TryNode* node) override;
-    void visitLet(LetNode* node) override;
-    void visitDo(DoNode* node) override;
-    void visitFor(ForNode* node) override;
-    void visitWhile(WhileNode* node) override;
-
-    // For function parameters and body
-    void visitFunctionParameters(FunctionNode* funcNode);
-    void visitFunctionBody(FunctionNode* funcNode);
+    // Statements - override to create contexts
+    void visitFunctionDefinition(FunctionDefinitionAst* node) override;
+    void visitFunctionArguments(FunctionDefinitionAst* node);
+    void visitFunctionBody(FunctionDefinitionAst* node);
+    void visitModule(ModuleAst* node) override;
+    void visitBaremodule(BaremoduleAst* node) override;
+    void visitStruct(StructAst* node) override;
+    void visitAbstract(AbstractAst* node) override;
+    void visitPrimitive(PrimitiveAst* node) override;
+    void visitMacro(MacroAst* node) override;
+    void visitFor(ForAst* node) override;
+    void visitWhile(WhileAst* node) override;
+    void visitIf(IfAst* node) override;
+    void visitTry(TryAst* node) override;
+    void visitLet(LetAst* node) override;
+    void visitDo(DoAst* node) override;
+    
+    // Expressions - override to handle specially
+    void visitAssignment(AssignmentAst* node) override;
+    void visitLambda(LambdaAst* node) override;
+    void visitImport(ImportAst* node) override;
+    
+    // Generators/Comprehensions
+    void visitGenerator(GeneratorAst* node) override;
+    void visitComprehension(ComprehensionAst* node) override;
 
     virtual void addImportedContexts();
-
-    AstNode* extractFunctionNameNode(FunctionNode* funcNode);
-    KDevelop::QualifiedIdentifier extractFunctionId(FunctionNode* funcNode);
-    KDevelop::RangeInRevision rangeForArgumentsContext(FunctionNode* funcNode);
 
     QVector<KDevelop::DUContext*> m_importedParentContexts;
 

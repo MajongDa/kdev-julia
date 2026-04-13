@@ -1,7 +1,11 @@
 #ifndef JULIA_HELPERS_H
 #define JULIA_HELPERS_H
 
-#include "../parser/ast.h"
+#include <QList>
+#include <QString>
+#include <QStringList>
+#include <QMutex>
+#include <QCache>
 
 #include <language/duchain/declaration.h>
 #include <language/duchain/types/unsuretype.h>
@@ -9,11 +13,7 @@
 #include <language/duchain/types/structuretype.h>
 #include <language/duchain/types/integraltype.h>
 
-#include <QList>
-#include <QString>
-#include <QStringList>
-#include <QMutex>
-#include <QCache>
+#include "parser/ast.h"
 
 namespace Julia {
 

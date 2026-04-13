@@ -3,7 +3,7 @@
 
 #include <language/duchain/builders/abstractusebuilder.h>
 
-#include "../parser/ast.h"
+#include "parser/ast.h"
 #include "contextbuilder.h"
 #include "expressionvisitor.h"
 
@@ -11,7 +11,7 @@ namespace Julia {
 
 class JuliaEditorIntegrator;
 
-typedef KDevelop::AbstractUseBuilder<Julia::AstNode, Julia::AstNode, ContextBuilder> UseBuilderBase;
+typedef KDevelop::AbstractUseBuilder<Julia::Ast, Julia::IdentifierAst, ContextBuilder> UseBuilderBase;
 
 class UseBuilder : public UseBuilderBase
 {
@@ -20,12 +20,12 @@ public:
     ~UseBuilder() override;
 
 protected:
-    KDevelop::RangeInRevision editorFindRange(AstNode* fromNode, AstNode* toNode) override;
-    KDevelop::QualifiedIdentifier identifierForNode(AstNode* node) override;
+    KDevelop::RangeInRevision editorFindRange(Ast* fromNode, Ast* toNode) override;
+    KDevelop::QualifiedIdentifier identifierForNode(IdentifierAst* node) override;
 
-    void visitIdentifier(AstNode* node) override;
-    void visitCall(CallNode* node) override;
-    void visitDot(AstNode* node) override;
+    void visitIdentifier(IdentifierAst* node) override;
+    void visitCall(CallAst* node) override;
+    void visitAttribute(AttributeAst* node) override;
 
 private:
     JuliaEditorIntegrator* m_editor;

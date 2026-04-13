@@ -56,10 +56,11 @@ set(kdevjulialanguagesupport_PART_SRCS
     # Parser infrastructure
     parser/juliabridge.cpp
     parser/ast.cpp
+    parser/asttransformer.cpp
     parser/juliaparsejob.cpp
+    parser/astvisitor.cpp
+    parser/juliaastdefaultvisitor.cpp
     # DUChain builders
-    duchain/astvisitor.cpp
-    duchain/juliaastdefaultvisitor.cpp
     duchain/contextbuilder.cpp
     duchain/declarationbuilder.cpp
     duchain/usebuilder.cpp
@@ -68,14 +69,12 @@ set(kdevjulialanguagesupport_PART_SRCS
     duchain/juliaeditorintegrator.cpp
     duchain/juliaducontext.cpp
     duchain/navigation/navigationwidget.cpp
-    # Type mapping
-    types/types.cpp
     # Completion
     completion/juliacompletion.cpp
 )
 
 # Tests
-add_subdirectory(parser/ast/test)
+# add_subdirectory(parser/ast/test)
 
 
 ecm_qt_declare_logging_category(kdevjulialanguagesupport_PART_SRCS

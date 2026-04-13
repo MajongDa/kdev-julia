@@ -4,16 +4,16 @@
 #include <language/duchain/builders/abstractdeclarationbuilder.h>
 #include <language/duchain/builders/abstracttypebuilder.h>
 
-#include "../parser/ast.h"
-#include "../types/types.h"
+#include "parser/ast.h"
+#include "types/types.h"
 #include "contextbuilder.h"
 
 namespace Julia {
 
 class JuliaEditorIntegrator;
 
-typedef KDevelop::AbstractTypeBuilder<Julia::AstNode, Julia::AstNode, ContextBuilder> TypeBuilderBase;
-typedef KDevelop::AbstractDeclarationBuilder<Julia::AstNode, Julia::AstNode, TypeBuilderBase> DeclarationBuilderBase;
+typedef KDevelop::AbstractTypeBuilder<Ast, IdentifierAst, ContextBuilder> TypeBuilderBase;
+typedef KDevelop::AbstractDeclarationBuilder<Ast, IdentifierAst, TypeBuilderBase> DeclarationBuilderBase;
 
 class DeclarationBuilder : public DeclarationBuilderBase
 {
@@ -23,36 +23,32 @@ public:
 
 protected:
     // Required overrides from base
-    KDevelop::RangeInRevision editorFindRange(AstNode* fromNode, AstNode* toNode) override;
-    void setContextOnNode(AstNode* node, KDevelop::DUContext* context) override;
-    KDevelop::DUContext* contextFromNode(AstNode* node) override;
-    KDevelop::QualifiedIdentifier identifierForNode(AstNode* node) override;
+    KDevelop::RangeInRevision editorFindRange(Ast* fromNode, Ast* toNode) override;
+    void setContextOnNode(Ast* node, KDevelop::DUContext* context) override;
+    KDevelop::DUContext* contextFromNode(Ast* node) override;
+    KDevelop::QualifiedIdentifier identifierForNode(IdentifierAst* node) override;
 
     // Declaration creation via virtual dispatch (Python-style)
-    void visitNode(AstNode* node) override;
-    void visitFunction(FunctionNode* node) override;
-    void visitStruct(StructNode* node) override;
-    void visitModule(AstNode* node) override;
-    void visitAbstract(AstNode* node) override;
-    void visitPrimitive(AstNode* node) override;
-    void visitUsing(AstNode* node) override;
-    void visitImport(AstNode* node) override;
-    void visitExport(AstNode* node) override;
-    void visitAssignment(AssignmentNode* node) override;
-    void visitReturn(ReturnNode* node) override;
-    void visitStructBody(StructNode* node);
-    void visitMacro(AstNode* node) override;
-    void visitMacroCall(AstNode* node) override;
-    void visitImportPath(AstNode* node) override;
-    void visitFor(ForNode* node) override;
-    void visitWhile(WhileNode* node) override;
-    void visitGlobal(GlobalNode* node) override;
-    void visitLocal(LocalNode* node) override;
-    void visitConst(ConstNode* node) override;
-    void visitFunctionSignature(CallNode* node) override;
-
-    // Note: visitFunctionParameters and visitFunctionBody are inherited from ContextBuilder
-    // They create contexts and should be called after creating declarations
+    void visitNode(Ast* node) override;
+    void visitCode(CodeAst* node) override;
+    void visitFunctionDefinition(FunctionDefinitionAst* node) override;
+    void visitArguments(ArgumentsAst* node) override;
+    void visitAssignment(AssignmentAst* node) override;
+    void visitReturn(ReturnAst* node) override;
+    void visitImport(ImportAst* node) override;
+    void visitFor(ForAst* node) override;
+    void visitWhile(WhileAst* node) override;
+    void visitGlobal(GlobalAst* node) override;
+    void visitLocal(LocalAst* node) override;
+    void visitModule(ModuleAst* node) override;
+    void visitBaremodule(BaremoduleAst* node) override;
+    void visitStruct(StructAst* node) override;
+    void visitAbstract(AbstractAst* node) override;
+    void visitPrimitive(PrimitiveAst* node) override;
+    void visitMacro(MacroAst* node) override;
+    void visitConst(ConstAst* node) override;
+    void processArg(ArgAst* node, KDevelop::FunctionType::Ptr funcType, 
+                   int defaultValueIndex, ArgumentsAst* parentArgs);
 
 private:
     JuliaEditorIntegrator* m_editor;

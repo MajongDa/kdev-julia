@@ -3,7 +3,7 @@
 
 #include <QList>
 #include <QString>
-#include <QVariant>
+#include <QSharedPointer>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonArray>
@@ -14,737 +14,860 @@ namespace KDevelop { class DUContext; }
 
 namespace Julia {
 
-class AstNode;
-class AstVisitor;
+enum class AstType {
+    AstType, //0
+    
+    IdentifierAstType, //1
 
-// Forward declarations for class-based AST nodes (Python-style)
-class FunctionDefinitionAst;
-class ReturnValueAst;
-class NameReferenceAst;
-class AssignmentValueAst;
-class BlockAst;
-class IfBranchAst;
-class WhileLoopAst;
-class ForLoopAst;
-class TryCatchAst;
-
-enum class NodeKind {
-    TopLevel,
-    Block,
+    // Statements (Julia-specific)
+    StatementAstType, //2
+    FunctionDefinitionAstType, //3
+    ReturnAstType, //4
+    AssignmentAstType, //5
+    ForAstType, //6
+    WhileAstType, //7
+    IfAstType, //8
+    TryAstType, //9
+    ImportAstType, //10
+    ImportFromAstType, //11
+    GlobalAstType,  //12
+    BreakAstType, //13
+    ContinueAstType, //14
     
-    Function,
-    Struct,
-    Module,
-    Baremodule,
-    Abstract,
-    Primitive,
-    Macro,
-    MacroCall,
+    // Julia-specific statements
+    ModuleAstType, //15
+    BaremoduleAstType, //16
+    StructAstType,  //17
+    AbstractAstType, //18
+    PrimitiveAstType, //19
+    MacroAstType, //20
+    UsingAstType, //21
+    ExportAstType, //22
+    ConstAstType, //23
+    LocalAstType, //24
+    LetAstType, //25
+    DoAstType, //26
     
-    Assignment,
-    Return,
-    If,
-    ElseIf,
-    Else,
-    While,
-    For,
-    Try,
-    Catch,
-    Finally,
-    Break,
-    Continue,
+    // Expressions
+    ExpressionAstType, //27
+    CallAstType, //28
+    AttributeAstType,  //29
+    BinaryOperationAstType, //30
+    UnaryOperationAstType, //31
+    LambdaAstType, //32
+    IfExpressionAstType, //33
+    DictAstType, //34
+    SetAstType, //35
+    ListAstType, //36
+    TupleAstType, //37
+    NumberAstType, //38
+    StringAstType, //39
+    EllipsisAstType, //40
+    SubscriptAstType, //41
+    SliceAstType, //42
+    StarredAstType, //43
     
-    Call,
-    Curly,
-    Where,
-    Parameters,
-    Identifier,
-    String,
-    Float,
-    Integer,
-    Bool,
-    Operator,
-    Tuple,
-    Array,
-    Dict,
-    Ref,
-    Vect,
-    Generator,
-    ImportPath,
-    MacroName,
+    // Julia-specific expressions
+    ParameterAstType, //44
+    TypeAnnotationAstType, //45
+    CurlyAstType, //46
+    ImportPathAstType, //47
+    GeneratorAstType, //48
+    InterpolatedStringAstType, //49
+    MacroCallAstType, //50
+    RefAstType, //51
+    KwArgAstType, //52
     
-    TypeAnnotation,
+    // Top-level code
+    TopLevelAstType, //53
     
-    Using,
-    Import,
-    Export,
+    // Pattern (for match statement)
+    PatternAstType, //54
+    MatchAstType, //55
+    MatchCaseAstType, //56
     
-    Const,
-    Global,
-    Local,
-    Let,
-    Do,
-    Quote,
-    End,
+    // Additional types for AST construction
+    ArgumentsAstType, //57
+    ArgAstType, //58
+    KeywordAstType, //59
+    AliasAstType, //60
+    ExceptionHandlerAstType, //62
+    ComprehensionAstType, //63
     
-    ColonEquals,
-    Dot,
-    Colon,
-    Semicolon,
-    Comma,
-    
-    Comment,
-    Whitespace,
-    Newline,
-    Error,
-    Unknown
+    LastAstType  //64
 };
 
-NodeKind stringToNodeKind(const QString& kindStr);
-QString nodeKindToString(NodeKind kind);
-
-class AstNode
+class Ast
 {
 public:
-    AstNode(NodeKind kind, const QString& text, const KDevelop::RangeInRevision& range);
-    virtual ~AstNode();
+    Ast(Ast* parent = nullptr, AstType type = AstType::AstType);
+    virtual ~Ast();
     
-    NodeKind kind() const;
-    QString text() const;
-    KDevelop::RangeInRevision range() const;
+    Ast* parent = nullptr;
+    AstType astType = AstType::AstType;
     
-    bool isLeaf() const;
-    void setIsLeaf(bool leaf);
-    QList<AstNode*> children() const;
-    void addChild(AstNode* child);
-    AstNode* parent() const;
-    void setParent(AstNode* parent);
+    bool isExpression() const { 
+        return astType >= AstType::ExpressionAstType && astType < AstType::TopLevelAstType; 
+    }
+    bool isStatement() const { 
+        return astType >= AstType::StatementAstType && astType < AstType::ExpressionAstType;
+    }
     
-    AstNode* firstChild() const;
-    AstNode* lastChild() const;
-    AstNode* nextSibling() const;
-    AstNode* previousSibling() const;
+    void copyRange(const Ast* other) {
+        startCol = other->startCol;
+        endCol = other->endCol;
+        startLine = other->startLine;
+        endLine = other->endLine;
+    }
     
-    bool isDeclaration() const;
-    bool isExpression() const;
-    bool isStatement() const;
-    bool isType() const;
+    bool appearsBefore(const Ast* other) {
+        return startLine < other->startLine || (startLine == other->startLine && startCol < other->startCol);
+    }
     
-    virtual QString dump() const;
+    KDevelop::RangeInRevision range() const {
+        return KDevelop::RangeInRevision(startLine, startCol, endLine, endCol);
+    }
     
-    void accept(AstVisitor* visitor);
+    KDevelop::CursorInRevision start() const {
+        return KDevelop::CursorInRevision(startLine, startCol);
+    }
     
-    static AstNode* fromJson(const QJsonObject& json, AstNode* parent = nullptr);
-    static AstNode* parseJson(const QByteArray& json);
-
+    KDevelop::CursorInRevision end() const {
+        return KDevelop::CursorInRevision(endLine, endCol);
+    }
+    
+    bool isChildOf(Ast* other) const {
+        const Ast* p = this;
+        while (p) {
+            if (p == other) return true;
+            p = p->parent;
+        }
+        return false;
+    }
+    
+    virtual QString dump() const {
+        QString r = QStringLiteral("Ast(astType=");
+        r.append(QString::number(static_cast<int>(astType)));
+        r.append(QStringLiteral(", startLine="));
+        r.append(QString::number(startLine));
+        r.append(QStringLiteral(", startCol="));
+        r.append(QString::number(startCol));
+        r.append(QStringLiteral(", endCol="));
+        r.append(QString::number(endCol));
+        r.append(QStringLiteral(", endLine="));
+        r.append(QString::number(endLine));
+        r.append(QStringLiteral(")"));
+        return r;
+    };
+    
+    int startCol = 0;
+    int startLine = 0;
+    int endCol = 0;
+    int endLine = 0;
+    
     KDevelop::DUContext* context = nullptr;
-
-protected:
-    AstNode(NodeKind kind);
-    
-private:
-    NodeKind m_kind;
-    QString m_text;
-    KDevelop::RangeInRevision m_range;
-    bool m_isLeaf;
-    QList<AstNode*> m_children;
-    AstNode* m_parent;
-    
-    void parseChildren(const QJsonArray& children);
 };
 
-class FunctionDefinitionAst : public AstNode
+// Used by AbstractUseBuilder as NameT parameter
+class IdentifierAst : public Ast
 {
 public:
-    FunctionDefinitionAst(const QString& name, const KDevelop::RangeInRevision& range);
+    IdentifierAst(Ast* parent = nullptr, const QString& value = QString());
     
-    QString functionName() const;
-    AstNode* functionNameNode() const;
-    AstNode* callNode() const;
-    AstNode* body() const;
-    AstNode* returnType() const;
+    QString value;
     
-    bool hasReturnType() const;
-    int argumentCount() const;
-    QList<AstNode*> parameters() const;
-    QList<AstNode*> typeParameters() const;
+    QString dump() const override;
+
+    //TODO Make code prettier, this is obvios reimplemntation
+    // do we need this?
+    enum Context { Load = 1, Store = 2, Delete = 3, Invalid = -1 };
+    Context context = Context::Load;
+    bool operator!=(Context c) const { return context != c; }
+    
+    operator QString() const { return value; }
+    
+    bool operator==(const IdentifierAst& rhs) const { return value == rhs.value; }
+    bool operator==(const QString& rhs) const { return value == rhs; }
+};
+
+
+// Statement classes
+
+
+class StatementAst : public Ast
+{
+public:
+    /* TODO Statement is body of function etc.
+     * we need QList<Ast*> body inside it for Identifiers etc
+     * also correct visitor methods should be implemented
+    */
+    StatementAst(Ast* parent, AstType type) : Ast(parent, type) {}
+};
+
+class ArgumentsAst : public Ast
+{
+public:
+    ArgumentsAst(Ast* parent);
+    
+    QList<Ast*> arguments;       // Regular positional arguments
+    QList<Ast*> posonlyargs;  // Positional-only arguments (before ;)
+    QList<Ast*> kwonlyargs;  // Keyword-only arguments (after ;)
+    QList<Ast*> defaultValues;
+    Ast* vararg = nullptr;    // *args
+    Ast* kwarg = nullptr;   // **kwargs
     
     QString dump() const override;
 };
 
-class ReturnValueAst : public AstNode
+class FunctionDefinitionAst : public StatementAst
 {
 public:
-    ReturnValueAst(const KDevelop::RangeInRevision& range);
+    FunctionDefinitionAst(Ast* parent);
     
-    AstNode* value() const;
+    IdentifierAst* name = nullptr;
+    ArgumentsAst* arguments = nullptr;  // Function arguments
+    QList<Ast*> decorators;
+    QList<Ast*> body;
+    Ast* returns = nullptr;
     
     QString dump() const override;
 };
 
-class NameReferenceAst : public AstNode
+class ReturnAst : public StatementAst
 {
 public:
-    NameReferenceAst(const QString& name, const KDevelop::RangeInRevision& range);
+    ReturnAst(Ast* parent);
     
-    enum class Context { Load = 1, Store = 2, Invalid = -1 };
-    
-    QString identifier() const;
-    Context context() const;
-    void setContext(Context c);
-    
-    QString dump() const override;
-    
-private:
-    Context m_context;
-};
-
-class AssignmentValueAst : public AstNode
-{
-public:
-    AssignmentValueAst(const KDevelop::RangeInRevision& range);
-    
-    AstNode* leftHandSide() const;
-    AstNode* rightHandSide() const;
+    Ast* value = nullptr;
     
     QString dump() const override;
 };
 
-class BlockAst : public AstNode
+class AssignmentAst : public StatementAst
 {
 public:
-    BlockAst(const KDevelop::RangeInRevision& range);
+    AssignmentAst(Ast* parent);
     
-    QList<AstNode*> statements() const;
+    QList<Ast*> targets;
+    Ast* value = nullptr;
     
     QString dump() const override;
 };
 
-class IfBranchAst : public AstNode
+class ForAst : public StatementAst
 {
 public:
-    IfBranchAst(const KDevelop::RangeInRevision& range);
+    ForAst(Ast* parent);
     
-    AstNode* condition() const;
-    AstNode* thenBranch() const;
-    AstNode* elseBranch() const;
-    QList<AstNode*> elseifBranches() const;
+    Ast* target = nullptr;
+    Ast* iterator = nullptr;
+    QList<Ast*> body;
+    QList<Ast*> orelse;
     
     QString dump() const override;
 };
 
-class WhileLoopAst : public AstNode
+class WhileAst : public StatementAst
 {
 public:
-    WhileLoopAst(const KDevelop::RangeInRevision& range);
+    WhileAst(Ast* parent);
     
-    AstNode* condition() const;
-    AstNode* body() const;
+    Ast* condition = nullptr;
+    QList<Ast*> body;
+    QList<Ast*> orelse;
     
     QString dump() const override;
 };
 
-class ForLoopAst : public AstNode
+class IfAst : public StatementAst
 {
 public:
-    ForLoopAst(const KDevelop::RangeInRevision& range);
+    IfAst(Ast* parent);
     
-    AstNode* iterator() const;
-    AstNode* body() const;
+    Ast* condition = nullptr;
+    QList<Ast*> body;
+    QList<Ast*> orelse;
     
     QString dump() const override;
 };
 
-class TryCatchAst : public AstNode
+class TryAst : public StatementAst
 {
 public:
-    TryCatchAst(const KDevelop::RangeInRevision& range);
+    TryAst(Ast* parent);
     
-    AstNode* tryBody() const;
-    AstNode* catchVariable() const;
-    AstNode* catchBody() const;
-    AstNode* finallyBody() const;
+    QList<Ast*> body;
+    QList<Ast*> handlers;  // catch blocks
+    QList<Ast*> orelse;
+    QList<Ast*> finally;
     
     QString dump() const override;
 };
 
-class ParametersNode : public AstNode
+class ImportAst : public StatementAst
 {
 public:
-    ParametersNode(const KDevelop::RangeInRevision& range);
-
-    QList<AstNode*> parameters() const;
-
-    QString dump() const override;
-};
-
-class FunctionNode : public AstNode
-{
-public:
-    FunctionNode(const QString& name, const KDevelop::RangeInRevision& range);
+    ImportAst(Ast* parent);
     
-    QString functionName() const;
-    AstNode* functionNameNode() const;
-    // callNode() returns the Call node representing the function signature (name + positional args)
-    // This is the same node kind as regular function calls, but context determines it's a function definition
-    AstNode* callNode() const;
-    AstNode* body() const;
-    AstNode* returnType() const;
-    
-    bool hasReturnType() const;
-    int argumentCount() const;
-    // parameters() extracts typed parameters (TypeAnnotation nodes) from the callNode's children
-    QList<AstNode*> parameters() const;
-    QList<AstNode*> typeParameters() const;
+    QList<Ast*> names;  // alias nodes
+    QString module;
+    int level = 0;
     
     QString dump() const override;
 };
 
-class ParametersNode;
-class StructNode : public AstNode
+class GlobalAst : public StatementAst
 {
 public:
-    StructNode(const QString& name, const KDevelop::RangeInRevision& range);
+    GlobalAst(Ast* parent);
     
-    QString structName() const;
-    QList<AstNode*> fields() const;
-    QList<AstNode*> supertypes() const;
+    QList<IdentifierAst*> names;
     
     QString dump() const override;
 };
 
-class CallNode : public AstNode
+class BreakAst : public StatementAst
 {
 public:
-    CallNode(const QString& functionName, const KDevelop::RangeInRevision& range);
+    BreakAst(Ast* parent);
+    QString dump() const override { return QStringLiteral("Break()"); }
+};
+
+class ContinueAst : public StatementAst
+{
+public:
+    ContinueAst(Ast* parent);
+    QString dump() const override { return QStringLiteral("Continue()"); }
+};
+
+// Julia-specific statement classes
+class ModuleAst : public StatementAst
+{
+public:
+    ModuleAst(Ast* parent);
     
-    QString functionName() const;
-    QList<AstNode*> arguments() const;
-    
-    int argumentCount() const;
-    bool isFunctionCall() const;
-    bool isMacroCall() const;
+    IdentifierAst* name = nullptr;
+    QList<Ast*> body;
     
     QString dump() const override;
 };
 
-class CurlyNode : public AstNode
+class BaremoduleAst : public StatementAst
 {
 public:
-    CurlyNode(const QString& functionName, const KDevelop::RangeInRevision& range);
+    BaremoduleAst(Ast* parent);
     
-    QString functionName() const;
-    QList<AstNode*> arguments() const;
-    
-    int argumentCount() const;
+    IdentifierAst* name = nullptr;
+    QList<Ast*> body;
     
     QString dump() const override;
 };
 
-class AssignmentNode : public AstNode
+class StructAst : public StatementAst
 {
 public:
-    AssignmentNode(const KDevelop::RangeInRevision& range);
+    StructAst(Ast* parent);
     
-    AstNode* leftHandSide() const;
-    AstNode* rightHandSide() const;
+    bool isMutable = false;
+    IdentifierAst* name = nullptr;
+    Ast* typeParameters = nullptr;  // for parametric structs: Foo{T}
+    QList<Ast*> body;
     
     QString dump() const override;
 };
 
-class IdentifierNode : public AstNode
+class AbstractAst : public StatementAst
 {
 public:
-    IdentifierNode(const QString& name, const KDevelop::RangeInRevision& range);
+    AbstractAst(Ast* parent);
     
-    QString identifier() const;
+    IdentifierAst* name = nullptr;
+    Ast* typeParameters = nullptr;
     
     QString dump() const override;
 };
 
-class StringNode : public AstNode
+class PrimitiveAst : public StatementAst
 {
 public:
-    StringNode(const QString& value, const KDevelop::RangeInRevision& range);
+    PrimitiveAst(Ast* parent);
     
-    QString value() const;
+    IdentifierAst* name = nullptr;
+    Ast* typeParameters = nullptr;
+    Ast* underlyingType = nullptr;
     
     QString dump() const override;
 };
 
-class NumberNode : public AstNode
+class MacroAst : public StatementAst
 {
 public:
-    NumberNode(const QString& value, bool isFloat, const KDevelop::RangeInRevision& range);
+    MacroAst(Ast* parent);
     
-    QString value() const;
-    bool isFloat() const;
-    bool isInteger() const;
-    double asFloat() const;
-    qint64 asInteger() const;
-    
-    QString dump() const override;
-    
-private:
-    bool m_isFloat;
-};
-
-class TupleNode : public AstNode
-{
-public:
-    TupleNode(const QString& name, const KDevelop::RangeInRevision& range);
-    
-    QList<AstNode*> elements() const;
+    IdentifierAst* name = nullptr;
+    Ast* parameters = nullptr;
+    QList<Ast*> body;
     
     QString dump() const override;
 };
 
-class ArrayNode : public AstNode
+class UsingAst : public StatementAst
 {
 public:
-    ArrayNode(const QString& name, const KDevelop::RangeInRevision& range);
+    UsingAst(Ast* parent);
     
-    QList<AstNode*> elements() const;
+    QList<Ast*> names;  // ImportPath nodes
+    
+    QString dump() const override;
+};
+
+class ExportAst : public StatementAst
+{
+public:
+    ExportAst(Ast* parent);
+    
+    QList<IdentifierAst*> names;
+    
+    QString dump() const override;
+};
+
+class ConstAst : public StatementAst
+{
+public:
+    ConstAst(Ast* parent);
+    
+    Ast* target = nullptr;
+    Ast* value = nullptr;
+    
+    QString dump() const override;
+};
+
+class LocalAst : public StatementAst
+{
+public:
+    LocalAst(Ast* parent);
+    
+    QList<IdentifierAst*> names;
+    
+    QString dump() const override;
+};
+
+class LetAst : public StatementAst
+{
+public:
+    LetAst(Ast* parent);
+    
+    QList<Ast*> bindings;
+    QList<Ast*> body;
+    
+    QString dump() const override;
+};
+
+class DoAst : public StatementAst
+{
+public:
+    DoAst(Ast* parent);
+    
+    Ast* call = nullptr;
+    QList<Ast*> body;
     
     QString dump() const override;
 };
 
 
+// Expression AST - must be defined before expression classes
 
-class TryNode : public AstNode
+
+class ExpressionAst : public Ast
 {
 public:
-    TryNode(const KDevelop::RangeInRevision& range);
+    ExpressionAst(Ast* parent, AstType type = AstType::ExpressionAstType);
     
-    AstNode* tryBody() const;
-    AstNode* catchVariable() const;
-    AstNode* catchBody() const;
-    AstNode* finallyBody() const;
+    enum Context { Load = 1, Store = 2, Delete = 3, Invalid = -1 };
+    Context context = Context::Load;
+};
+
+
+// Julia-specific expression classes
+class ParameterAst : public ExpressionAst
+{
+public:
+    ParameterAst(Ast* parent);
+    
+    IdentifierAst* name = nullptr;
+    Ast* defaultValue = nullptr;
+    Ast* annotation = nullptr;
+
     
     QString dump() const override;
 };
 
-class ConstNode : public AstNode
+class TypeAnnotationAst : public ExpressionAst
 {
 public:
-    ConstNode(const KDevelop::RangeInRevision& range);
+    TypeAnnotationAst(Ast* parent);
     
-    AstNode* target() const;
-    AstNode* value() const;
+    Ast* value = nullptr;
+    Ast* type = nullptr;
     
     QString dump() const override;
 };
 
-class LetNode : public AstNode
+class CurlyAst : public ExpressionAst
 {
 public:
-    LetNode(const KDevelop::RangeInRevision& range);
+    CurlyAst(Ast* parent);
     
-    QList<AstNode*> bindings() const;
-    AstNode* body() const;
+    Ast* name = nullptr;
+    QList<Ast*> parameters;
     
     QString dump() const override;
 };
 
-class DoNode : public AstNode
+class ImportPathAst : public ExpressionAst
 {
 public:
-    DoNode(const KDevelop::RangeInRevision& range);
+    ImportPathAst(Ast* parent);
     
-    QList<AstNode*> arguments() const;
-    AstNode* body() const;
+    QList<IdentifierAst*> names;
+    IdentifierAst* asName = nullptr;
+    int dotCount = 0;
     
     QString dump() const override;
 };
 
-class QuoteNode : public AstNode
+class GeneratorAst : public ExpressionAst
 {
 public:
-    QuoteNode(const KDevelop::RangeInRevision& range);
+    GeneratorAst(Ast* parent);
     
-    QList<AstNode*> body() const;
+    Ast* expression = nullptr;
+    Ast* iterator = nullptr;
+    QList<Ast*> filters;
     
     QString dump() const override;
 };
 
-class GlobalNode : public AstNode
+class InterpolatedStringAst : public ExpressionAst
 {
 public:
-    GlobalNode(const KDevelop::RangeInRevision& range);
+    InterpolatedStringAst(Ast* parent);
     
-    QList<AstNode*> identifiers() const;
+    QList<Ast*> parts;
     
     QString dump() const override;
 };
 
-class LocalNode : public AstNode
+class MacroCallAst : public ExpressionAst
 {
 public:
-    LocalNode(const KDevelop::RangeInRevision& range);
+    MacroCallAst(Ast* parent);
     
-    QList<AstNode*> identifiers() const;
+    IdentifierAst* name = nullptr;
+    QList<Ast*> arguments;
     
     QString dump() const override;
 };
 
-class BaremoduleNode : public AstNode
+class RefAst : public ExpressionAst
 {
 public:
-    BaremoduleNode(const QString& name, const KDevelop::RangeInRevision& range);
+    RefAst(Ast* parent);
     
-    QString moduleName() const;
-    AstNode* body() const;
+    Ast* value = nullptr;
+    QList<Ast*> indices;
     
     QString dump() const override;
 };
 
-class ModuleNode : public AstNode
+class KwArgAst : public ExpressionAst
 {
 public:
-    ModuleNode(const QString& name, const KDevelop::RangeInRevision& range);
+    KwArgAst(Ast* parent);
     
-    QString moduleName() const;
-    AstNode* body() const;
+    IdentifierAst* key = nullptr;
+    Ast* value = nullptr;
     
     QString dump() const override;
 };
 
-class BeginNode : public AstNode
+// Expression classes
+class CallAst : public ExpressionAst
 {
 public:
-    BeginNode(const KDevelop::RangeInRevision& range);
+    CallAst(Ast* parent);
     
-    AstNode* body() const;
+    Ast* function = nullptr;
+    QList<Ast*> arguments;
+    QList<Ast*> keywords;  // keyword arguments
     
     QString dump() const override;
 };
 
-class BreakNode : public AstNode
+class BinaryOperationAst : public ExpressionAst
 {
 public:
-    BreakNode(const KDevelop::RangeInRevision& range);
+    enum class Operator {
+        Add, Sub, Mul, Div, FloorDiv, Mod, Pow,
+        LShift, RShift, BitAnd, BitOr, BitXor,
+        And, Or,
+        Eq, Ne, Lt, Le, Gt, Ge
+    };
+    
+    BinaryOperationAst(Ast* parent);
+    
+    Operator op = Operator::Add;
+    Ast* left = nullptr;
+    Ast* right = nullptr;
     
     QString dump() const override;
 };
 
-class ContinueNode : public AstNode
+class UnaryOperationAst : public ExpressionAst
 {
 public:
-    ContinueNode(const KDevelop::RangeInRevision& range);
+    enum class Operator { Invert, Not, UAdd, USub };
+    
+    UnaryOperationAst(Ast* parent);
+    
+    Operator op = Operator::UAdd;
+    Ast* operand = nullptr;
     
     QString dump() const override;
 };
 
-class ReturnNode : public AstNode
+class NumberAst : public ExpressionAst
 {
 public:
-    ReturnNode(const KDevelop::RangeInRevision& range);
+    NumberAst(Ast* parent, AstType type = AstType::NumberAstType);
     
-    AstNode* value() const;
+    QString value;
+    bool isInt = false;
     
     QString dump() const override;
 };
 
-class WhileNode : public AstNode
+class StringAst : public ExpressionAst
 {
 public:
-    WhileNode(const KDevelop::RangeInRevision& range);
+    StringAst(Ast* parent, AstType type = AstType::StringAstType);
     
-    AstNode* condition() const;
-    AstNode* body() const;
+    QString value;
+    
+    QString dump() const override { return QStringLiteral("Str('") + value + QStringLiteral("')"); }
+};
+
+class ListAst : public ExpressionAst
+{
+public:
+    ListAst(Ast* parent);
+    
+    QList<Ast*> elements;
+    ExpressionAst::Context context = ExpressionAst::Load;
     
     QString dump() const override;
 };
 
-class ForNode : public AstNode
+class TupleAst : public ExpressionAst
 {
 public:
-    ForNode(const KDevelop::RangeInRevision& range);
+    TupleAst(Ast* parent);
     
-    AstNode* iterator() const;
-    AstNode* body() const;
+    QList<Ast*> elements;
+    ExpressionAst::Context context = ExpressionAst::Load;
     
     QString dump() const override;
 };
 
-class IfNode : public AstNode
+class DictAst : public ExpressionAst
 {
 public:
-    IfNode(const KDevelop::RangeInRevision& range);
+    DictAst(Ast* parent);
     
-    AstNode* condition() const;
-    AstNode* thenBranch() const;
-    AstNode* elseBranch() const;
-    QList<AstNode*> elseifBranches() const;
+    QList<Ast*> keys;
+    QList<Ast*> values;
     
     QString dump() const override;
 };
 
-class ElseIfNode : public AstNode
+class SubscriptAst : public ExpressionAst
 {
 public:
-    ElseIfNode(const KDevelop::RangeInRevision& range);
+    SubscriptAst(Ast* parent);
     
-    AstNode* condition() const;
-    AstNode* body() const;
+    Ast* value = nullptr;
+    Ast* slice = nullptr;
+    ExpressionAst::Context context = ExpressionAst::Load;
     
     QString dump() const override;
 };
 
-class ElseNode : public AstNode
+class AttributeAst : public ExpressionAst
 {
 public:
-    ElseNode(const KDevelop::RangeInRevision& range);
+    AttributeAst(Ast* parent);
     
-    AstNode* body() const;
+    Ast* value = nullptr;
+    IdentifierAst* attribute = nullptr;
+    ExpressionAst::Context context = ExpressionAst::Load;
+    int depth = 0;
     
     QString dump() const override;
 };
 
-class EndNode : public AstNode
+class StarredAst : public ExpressionAst
 {
 public:
-    EndNode(const KDevelop::RangeInRevision& range);
+    StarredAst(Ast* parent);
+    
+    Ast* value = nullptr;
+    ExpressionAst::Context context = ExpressionAst::Load;
     
     QString dump() const override;
 };
 
-class ExportNode : public AstNode
+class LambdaAst : public ExpressionAst
 {
 public:
-    ExportNode(const KDevelop::RangeInRevision& range);
+    LambdaAst(Ast* parent);
     
-    QList<AstNode*> identifiers() const;
+    Ast* arguments = nullptr;
+    Ast* body = nullptr;
     
     QString dump() const override;
 };
 
-class ImportNode : public AstNode
+class IfExpressionAst : public ExpressionAst
 {
 public:
-    ImportNode(const KDevelop::RangeInRevision& range);
+    IfExpressionAst(Ast* parent);
     
-    QList<AstNode*> importPaths() const;
+    Ast* condition = nullptr;
+    Ast* body = nullptr;
+    Ast* orelse = nullptr;
     
     QString dump() const override;
 };
 
-class MacroNode : public AstNode
+// Pattern classes (for match statement)
+class PatternAst : public Ast
 {
 public:
-    MacroNode(const QString& name, const KDevelop::RangeInRevision& range);
+    PatternAst(Ast* parent, AstType type = AstType::PatternAstType) : Ast(parent, type) {}
+};
+
+class MatchCaseAst : public Ast
+{
+public:
+    MatchCaseAst(Ast* parent);
     
-    QString macroName() const;
-    AstNode* parameters() const;
-    AstNode* body() const;
+    PatternAst* pattern = nullptr;
+    Ast* guard = nullptr;
+    QList<Ast*> body;
     
     QString dump() const override;
 };
 
-class AbstractNode : public AstNode
+class MatchAst : public Ast
 {
 public:
-    AbstractNode(const QString& name, const KDevelop::RangeInRevision& range);
+    MatchAst(Ast* parent);
     
-    QString typeName() const;
-    AstNode* supertype() const;
+    Ast* subject = nullptr;
+    QList<MatchCaseAst*> cases;
     
     QString dump() const override;
 };
 
-class PrimitiveNode : public AstNode
+// Other AST classes
+class ArgAst : public Ast
 {
 public:
-    PrimitiveNode(const QString& name, const KDevelop::RangeInRevision& range);
+    ArgAst(Ast* parent);
     
-    QString typeName() const;
-    AstNode* underlyingType() const;
+    IdentifierAst* argumentName = nullptr;
+    Ast* annotation = nullptr;
     
     QString dump() const override;
 };
 
-class CatchNode : public AstNode
+class KeywordAst : public Ast
 {
 public:
-    CatchNode(const KDevelop::RangeInRevision& range);
+    KeywordAst(Ast* parent);
     
-    AstNode* variable() const;
-    AstNode* body() const;
+    IdentifierAst* argumentName = nullptr;
+    Ast* value = nullptr;
     
     QString dump() const override;
 };
 
-class FinallyNode : public AstNode
+class AliasAst : public Ast
 {
 public:
-    FinallyNode(const KDevelop::RangeInRevision& range);
+    AliasAst(Ast* parent);
     
-    AstNode* body() const;
+    IdentifierAst* name = nullptr;
+    IdentifierAst* asName = nullptr;
     
     QString dump() const override;
 };
 
-class AsNode : public AstNode
+class ExceptionHandlerAst : public Ast
 {
 public:
-    AsNode(const KDevelop::RangeInRevision& range);
+    ExceptionHandlerAst(Ast* parent);
     
-    AstNode* original() const;
-    AstNode* alias() const;
+    Ast* type = nullptr;
+    IdentifierAst* name = nullptr;
+    QList<Ast*> body;
     
     QString dump() const override;
 };
 
-class DocNode : public AstNode
+class ComprehensionAst : public Ast
 {
 public:
-    DocNode(const KDevelop::RangeInRevision& range);
+    ComprehensionAst(Ast* parent);
     
-    AstNode* document() const;
+    Ast* target = nullptr;
+    Ast* iterator = nullptr;
+    QList<Ast*> conditions;
     
     QString dump() const override;
 };
 
-class MutableNode : public AstNode
+class SliceAst : public ExpressionAst
 {
 public:
-    MutableNode(const KDevelop::RangeInRevision& range);
+    SliceAst(Ast* parent);
+    
+    Ast* lower = nullptr;
+    Ast* upper = nullptr;
+    Ast* step = nullptr;
     
     QString dump() const override;
 };
 
-class OuterNode : public AstNode
+// CodeAst - Top-level code
+class CodeAst : public Ast
 {
 public:
-    OuterNode(const KDevelop::RangeInRevision& range);
-    
+    CodeAst();
+    ~CodeAst();
+
+    QList<Ast*> body;
+    IdentifierAst* name;  // module name
+
     QString dump() const override;
 };
 
-class PublicNode : public AstNode
-{
-public:
-    PublicNode(const KDevelop::RangeInRevision& range);
-    
-    QString dump() const override;
-};
 
-class VarNode : public AstNode
-{
-public:
-    VarNode(const KDevelop::RangeInRevision& range);
-    
-    QString dump() const override;
-};
+// Type definitions
 
-class TypeNode : public AstNode
-{
-public:
-    TypeNode(const KDevelop::RangeInRevision& range);
-    
-    QString dump() const override;
-};
 
-}
+typedef QSharedPointer<CodeAst> CodeAstPtr;
 
-#endif
+} // namespace Julia
+
+#endif // JULIA_AST_H
