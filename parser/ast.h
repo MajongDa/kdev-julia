@@ -9,7 +9,14 @@
 #include <QJsonArray>
 
 #include <language/editor/rangeinrevision.h>
-
+/*TODO
+ * некорректная структура данных - путаница наследования и композиции
+ * отсюда некорретные визиторы с грязным кодом
+ * отсюда грязный код в asttransformer
+ * contextbuilder context
+ * usebuilder context
+ * highlighting
+ */
 namespace KDevelop { class DUContext; }
 
 namespace Julia {
@@ -20,7 +27,7 @@ enum class AstType {
     IdentifierAstType, //1
 
     // Statements (Julia-specific)
-    StatementAstType, //2
+    BodyAstType, //2
     FunctionDefinitionAstType, //3
     ReturnAstType, //4
     AssignmentAstType, //5
@@ -47,54 +54,60 @@ enum class AstType {
     LocalAstType, //24
     LetAstType, //25
     DoAstType, //26
+
+    // Control flow
+    WhereAstType, //27
+    ElseIfAstType, //28
+    InAstType, //29
+    IterationAstType, //30
     
     // Expressions
-    ExpressionAstType, //27
-    CallAstType, //28
-    AttributeAstType,  //29
-    BinaryOperationAstType, //30
-    UnaryOperationAstType, //31
-    LambdaAstType, //32
-    IfExpressionAstType, //33
-    DictAstType, //34
-    SetAstType, //35
-    ListAstType, //36
-    TupleAstType, //37
-    NumberAstType, //38
-    StringAstType, //39
-    EllipsisAstType, //40
-    SubscriptAstType, //41
-    SliceAstType, //42
-    StarredAstType, //43
+    ExpressionAstType, //31
+    CallAstType, //32
+    AttributeAstType,  //33
+    BinaryOperationAstType, //34
+    UnaryOperationAstType, //35
+    LambdaAstType, //36
+    IfExpressionAstType, //37
+    DictAstType, //38
+    SetAstType, //39
+    ListAstType, //40
+    TupleAstType, //41
+    NumberAstType, //42
+    StringAstType, //43
+    EllipsisAstType, //44 varargs before ;
+    SubscriptAstType, //45
+    SliceAstType, //46
+    StarredAstType, //47
     
     // Julia-specific expressions
-    ParameterAstType, //44
-    TypeAnnotationAstType, //45
-    CurlyAstType, //46
-    ImportPathAstType, //47
-    GeneratorAstType, //48
-    InterpolatedStringAstType, //49
-    MacroCallAstType, //50
-    RefAstType, //51
-    KwArgAstType, //52
+    ParameterAstType, //48
+    TypeAnnotationAstType, //49
+    CurlyAstType, //50
+    ImportPathAstType, //51
+    GeneratorAstType, //52
+    InterpolatedStringAstType, //53
+    MacroCallAstType, //54
+    RefAstType, //55
+    KwArgAstType, //56
     
     // Top-level code
-    TopLevelAstType, //53
+    TopLevelAstType, //57
     
     // Pattern (for match statement)
-    PatternAstType, //54
-    MatchAstType, //55
-    MatchCaseAstType, //56
+    PatternAstType, //58
+    MatchAstType, //59
+    MatchCaseAstType, //60
     
     // Additional types for AST construction
-    ArgumentsAstType, //57
-    ArgAstType, //58
-    KeywordAstType, //59
-    AliasAstType, //60
-    ExceptionHandlerAstType, //62
-    ComprehensionAstType, //63
+    ArgumentsAstType, //61
+    ArgAstType, //62
+    KeywordAstType, //63
+    AliasAstType, //64
+    ExceptionHandlerAstType, //65
+    ComprehensionAstType, //66
     
-    LastAstType  //64
+    LastAstType  //67
 };
 
 class Ast
@@ -110,7 +123,7 @@ public:
         return astType >= AstType::ExpressionAstType && astType < AstType::TopLevelAstType; 
     }
     bool isStatement() const { 
-        return astType >= AstType::StatementAstType && astType < AstType::ExpressionAstType;
+        return astType >= AstType::BodyAstType && astType < AstType::ExpressionAstType;
     }
     
     void copyRange(const Ast* other) {
@@ -192,48 +205,22 @@ public:
 
 
 // Statement classes
-
-
-class StatementAst : public Ast
+class BodyAst : public Ast
 {
 public:
-    /* TODO Statement is body of function etc.
+    /* TODO Statement is body of function, struct etc.
      * we need QList<Ast*> body inside it for Identifiers etc
      * also correct visitor methods should be implemented
-    */
-    StatementAst(Ast* parent, AstType type) : Ast(parent, type) {}
-};
+     */
+    BodyAst(Ast* parent, AstType type);
 
-class ArgumentsAst : public Ast
-{
-public:
-    ArgumentsAst(Ast* parent);
-    
-    QList<Ast*> arguments;       // Regular positional arguments
-    QList<Ast*> posonlyargs;  // Positional-only arguments (before ;)
-    QList<Ast*> kwonlyargs;  // Keyword-only arguments (after ;)
-    QList<Ast*> defaultValues;
-    Ast* vararg = nullptr;    // *args
-    Ast* kwarg = nullptr;   // **kwargs
-    
-    QString dump() const override;
-};
-
-class FunctionDefinitionAst : public StatementAst
-{
-public:
-    FunctionDefinitionAst(Ast* parent);
-    
-    IdentifierAst* name = nullptr;
-    ArgumentsAst* arguments = nullptr;  // Function arguments
-    QList<Ast*> decorators;
     QList<Ast*> body;
-    Ast* returns = nullptr;
-    
+
     QString dump() const override;
 };
 
-class ReturnAst : public StatementAst
+
+class ReturnAst : public BodyAst
 {
 public:
     ReturnAst(Ast* parent);
@@ -243,7 +230,7 @@ public:
     QString dump() const override;
 };
 
-class AssignmentAst : public StatementAst
+class AssignmentAst : public BodyAst
 {
 public:
     AssignmentAst(Ast* parent);
@@ -254,57 +241,57 @@ public:
     QString dump() const override;
 };
 
-class ForAst : public StatementAst
+class ForAst : public BodyAst
 {
 public:
     ForAst(Ast* parent);
     
     Ast* target = nullptr;
     Ast* iterator = nullptr;
-    QList<Ast*> body;
-    QList<Ast*> orelse;
+    BodyAst* body = nullptr;
+    BodyAst* orelse = nullptr;
     
     QString dump() const override;
 };
 
-class WhileAst : public StatementAst
+class WhileAst : public BodyAst
 {
 public:
     WhileAst(Ast* parent);
     
     Ast* condition = nullptr;
-    QList<Ast*> body;
-    QList<Ast*> orelse;
+    BodyAst* body = nullptr;
+    BodyAst* orelse = nullptr;
     
     QString dump() const override;
 };
 
-class IfAst : public StatementAst
+class IfAst : public BodyAst
 {
 public:
     IfAst(Ast* parent);
     
     Ast* condition = nullptr;
-    QList<Ast*> body;
-    QList<Ast*> orelse;
+    BodyAst* body = nullptr;
+    BodyAst* orelse = nullptr;
     
     QString dump() const override;
 };
 
-class TryAst : public StatementAst
+class TryAst : public BodyAst
 {
 public:
     TryAst(Ast* parent);
     
-    QList<Ast*> body;
-    QList<Ast*> handlers;  // catch blocks
-    QList<Ast*> orelse;
-    QList<Ast*> finally;
+    BodyAst* body = nullptr;
+    QList<Ast*> handlers;  // ExceptionHandlerAst
+    BodyAst* orelse = nullptr;
+    BodyAst* finally = nullptr;
     
     QString dump() const override;
 };
 
-class ImportAst : public StatementAst
+class ImportAst : public BodyAst
 {
 public:
     ImportAst(Ast* parent);
@@ -316,7 +303,7 @@ public:
     QString dump() const override;
 };
 
-class GlobalAst : public StatementAst
+class GlobalAst : public BodyAst
 {
 public:
     GlobalAst(Ast* parent);
@@ -326,57 +313,58 @@ public:
     QString dump() const override;
 };
 
-class BreakAst : public StatementAst
+class BreakAst : public BodyAst
 {
 public:
     BreakAst(Ast* parent);
-    QString dump() const override { return QStringLiteral("Break()"); }
+    QString dump() const override;
 };
 
-class ContinueAst : public StatementAst
+class ContinueAst : public BodyAst
 {
 public:
     ContinueAst(Ast* parent);
-    QString dump() const override { return QStringLiteral("Continue()"); }
+    QString dump() const override;
 };
 
 // Julia-specific statement classes
-class ModuleAst : public StatementAst
+class ModuleAst : public BodyAst
 {
 public:
     ModuleAst(Ast* parent);
     
     IdentifierAst* name = nullptr;
-    QList<Ast*> body;
+    BodyAst* body = nullptr;
     
     QString dump() const override;
 };
 
-class BaremoduleAst : public StatementAst
+class BaremoduleAst : public BodyAst
 {
 public:
     BaremoduleAst(Ast* parent);
     
     IdentifierAst* name = nullptr;
-    QList<Ast*> body;
+    BodyAst* body = nullptr;
     
     QString dump() const override;
 };
 
-class StructAst : public StatementAst
+//TODO Struct contains Body node, not inherits from it
+class StructAst : public BodyAst
 {
 public:
     StructAst(Ast* parent);
-    
+
     bool isMutable = false;
     IdentifierAst* name = nullptr;
     Ast* typeParameters = nullptr;  // for parametric structs: Foo{T}
-    QList<Ast*> body;
+    BodyAst* body = nullptr;
     
     QString dump() const override;
 };
 
-class AbstractAst : public StatementAst
+class AbstractAst : public BodyAst
 {
 public:
     AbstractAst(Ast* parent);
@@ -387,7 +375,7 @@ public:
     QString dump() const override;
 };
 
-class PrimitiveAst : public StatementAst
+class PrimitiveAst : public BodyAst
 {
 public:
     PrimitiveAst(Ast* parent);
@@ -399,19 +387,19 @@ public:
     QString dump() const override;
 };
 
-class MacroAst : public StatementAst
+class MacroAst : public BodyAst
 {
 public:
     MacroAst(Ast* parent);
     
     IdentifierAst* name = nullptr;
     Ast* parameters = nullptr;
-    QList<Ast*> body;
+    BodyAst* body = nullptr;
     
     QString dump() const override;
 };
 
-class UsingAst : public StatementAst
+class UsingAst : public BodyAst
 {
 public:
     UsingAst(Ast* parent);
@@ -421,7 +409,7 @@ public:
     QString dump() const override;
 };
 
-class ExportAst : public StatementAst
+class ExportAst : public BodyAst
 {
 public:
     ExportAst(Ast* parent);
@@ -431,7 +419,7 @@ public:
     QString dump() const override;
 };
 
-class ConstAst : public StatementAst
+class ConstAst : public BodyAst
 {
 public:
     ConstAst(Ast* parent);
@@ -442,7 +430,7 @@ public:
     QString dump() const override;
 };
 
-class LocalAst : public StatementAst
+class LocalAst : public BodyAst
 {
 public:
     LocalAst(Ast* parent);
@@ -452,7 +440,7 @@ public:
     QString dump() const override;
 };
 
-class LetAst : public StatementAst
+class LetAst : public BodyAst
 {
 public:
     LetAst(Ast* parent);
@@ -463,7 +451,7 @@ public:
     QString dump() const override;
 };
 
-class DoAst : public StatementAst
+class DoAst : public BodyAst
 {
 public:
     DoAst(Ast* parent);
@@ -474,6 +462,53 @@ public:
     QString dump() const override;
 };
 
+
+// Control flow - after DoAst, before ExpressionAst
+
+class WhereAst : public Ast
+{
+public:
+    WhereAst(Ast* parent);
+    
+    // children[0] = signature (CallAst or TypeAnnotationAst)
+    // children[1..] = constraints (list of <: nodes)
+    QList<Ast*> constraints;
+    
+    QString dump() const override;
+};
+
+class ElseIfAst : public BodyAst
+{
+public:
+    ElseIfAst(Ast* parent);
+    
+    Ast* condition = nullptr;
+    BodyAst* body = nullptr;
+    
+    QString dump() const override;
+};
+
+class InAst : public Ast
+{
+public:
+    InAst(Ast* parent);
+    
+    Ast* target = nullptr;  // iterator variable
+    Ast* iter = nullptr;    // iterable expression
+    
+    QString dump() const override;
+};
+
+class IterationAst : public Ast
+{
+public:
+    IterationAst(Ast* parent);
+    
+    // Contains the in node(s) - multiple iterators in for loop
+    QList<Ast*> iterators;
+    
+    QString dump() const override;
+};
 
 // Expression AST - must be defined before expression classes
 
@@ -487,20 +522,35 @@ public:
     Context context = Context::Load;
 };
 
+/* Represents generic ellipsis
+ * may be seen in varargs and kwargs statements
+ */
+class EllipsisAst : public ExpressionAst
+{
+public:
+    EllipsisAst(Ast* parent);
 
-// Julia-specific expression classes
+    IdentifierAst* name;
+
+    QString dump() const override;
+
+};
+/* Represents function(*; ParameterAst...)
+ * may be represented in function call
+ * so we should contain list of its children
+*/
 class ParameterAst : public ExpressionAst
 {
 public:
     ParameterAst(Ast* parent);
     
-    IdentifierAst* name = nullptr;
-    Ast* defaultValue = nullptr;
-    Ast* annotation = nullptr;
-
+    // default kwargs
+    QList<AssignmentAst*> kwargs;
+    EllipsisAst* ellipsis = nullptr;
     
     QString dump() const override;
 };
+
 
 class TypeAnnotationAst : public ExpressionAst
 {
@@ -592,17 +642,7 @@ public:
 };
 
 // Expression classes
-class CallAst : public ExpressionAst
-{
-public:
-    CallAst(Ast* parent);
-    
-    Ast* function = nullptr;
-    QList<Ast*> arguments;
-    QList<Ast*> keywords;  // keyword arguments
-    
-    QString dump() const override;
-};
+
 
 class BinaryOperationAst : public ExpressionAst
 {
@@ -654,7 +694,7 @@ public:
     
     QString value;
     
-    QString dump() const override { return QStringLiteral("Str('") + value + QStringLiteral("')"); }
+    QString dump() const override;
 };
 
 class ListAst : public ExpressionAst
@@ -849,6 +889,54 @@ public:
     QString dump() const override;
 };
 
+class ArgumentsAst : public Ast
+{
+public:
+    ArgumentsAst(Ast* parent);
+
+    // IdentifierAst* name = nullptr;//Julia have name as call children
+    // QList<IdentifierAst*> arguments;// Regular positional arguments
+    // QList<AssignmentAst*> posonlyargs;// Positional-only arguments (before ;)
+    // // (only one ellipsis!) (before ;)
+    // EllipsisAst* vararg = nullptr;  // *args
+    // // Keyword-only arguments(only one ellipsis!) (after ;)
+    // ParameterAst* kwarg = nullptr;  // **kwargs
+
+    QString dump() const override;
+};
+
+class CallAst : public ExpressionAst
+{
+public:
+    CallAst(Ast* parent);
+
+    IdentifierAst* name = nullptr;//Julia have name as call children
+    QList<Ast*> arguments;// Positional and Positional-only arguments (before ;)
+    // (only one ellipsis!) (before ;)
+    EllipsisAst* vararg = nullptr;  // *args
+    // Keyword-only arguments(only one ellipsis!) (after ;)
+    ParameterAst* kwarg = nullptr;  // **kwargs
+
+    QString dump() const override;
+};
+
+//TODO Function contains Body node, not inherits from it
+class FunctionDefinitionAst : public BodyAst
+{
+public:
+    FunctionDefinitionAst(Ast* parent);
+
+    // Function signature - can be CallAst, TypeAnnotationAst, or WhereAst
+    // WhereAst contains: children[0]=TypeAnnotationAst/CallAst, children[1..]=<: constraints
+    // TypeAnnotationAst contains: children[0]=CallAst/WhereAst, children[1]=return type
+    Ast* callSignature = nullptr;
+    
+    // Function body
+    BodyAst* body = nullptr;
+
+    QString dump() const override;
+};
+
 // CodeAst - Top-level code
 class CodeAst : public Ast
 {
@@ -856,7 +944,8 @@ public:
     CodeAst();
     ~CodeAst();
 
-    QList<Ast*> body;
+    // Module body - list of top-level statements (functions, structs, imports, etc.)
+    QList<Ast*> children;
     IdentifierAst* name;  // module name
 
     QString dump() const override;

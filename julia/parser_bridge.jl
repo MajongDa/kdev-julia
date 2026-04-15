@@ -163,7 +163,7 @@ function main()
         
         if mode == "file"
             # Read filename from stdin and parse file
-            filename = strip(readline(stdin))
+            filename = String(strip(readline(stdin)))
             result = parse_julia_file(filename)
         elseif mode == "code"
             # Read source code from stdin
