@@ -17,8 +17,8 @@ void AstVisitor::visitNode(Ast* node)
     
     switch (node->astType) {
         // Statements - core
-        case AstType::StatementAstType:
-            visitStatement(static_cast<StatementAst*>(node));
+        case AstType::BlockAstType:
+            visitBlock(static_cast<BlockAst*>(node));
             break;
         case AstType::FunctionDefinitionAstType:
             visitFunctionDefinition(static_cast<FunctionDefinitionAst*>(node));
@@ -27,6 +27,9 @@ void AstVisitor::visitNode(Ast* node)
             visitReturn(static_cast<ReturnAst*>(node));
             break;
         case AstType::AssignmentAstType:
+            visitAssignment(static_cast<AssignmentAst*>(node));
+            break;
+        case AstType::CompoundAssignmentAstType:
             visitAssignment(static_cast<AssignmentAst*>(node));
             break;
         case AstType::ForAstType:
@@ -44,6 +47,9 @@ void AstVisitor::visitNode(Ast* node)
         case AstType::ImportAstType:
             visitImport(static_cast<ImportAst*>(node));
             break;
+        case AstType::SelectiveImportAstType:
+            visitImport(static_cast<ImportAst*>(node));
+            break;
         case AstType::GlobalAstType:
             visitGlobal(static_cast<GlobalAst*>(node));
             break;
@@ -54,7 +60,6 @@ void AstVisitor::visitNode(Ast* node)
             visitContinue(static_cast<ContinueAst*>(node));
             break;
 
-            
         // Julia-specific statements
         case AstType::ModuleAstType:
             visitModule(static_cast<ModuleAst*>(node));
@@ -106,12 +111,6 @@ void AstVisitor::visitNode(Ast* node)
         case AstType::AttributeAstType:
             visitAttribute(static_cast<AttributeAst*>(node));
             break;
-        case AstType::BinaryOperationAstType:
-            visitBinaryOperation(static_cast<BinaryOperationAst*>(node));
-            break;
-        case AstType::UnaryOperationAstType:
-            visitUnaryOperation(static_cast<UnaryOperationAst*>(node));
-            break;
         case AstType::NumberAstType:
             visitNumber(static_cast<NumberAst*>(node));
             break;
@@ -126,9 +125,6 @@ void AstVisitor::visitNode(Ast* node)
             break;
         case AstType::DictAstType:
             visitDict(static_cast<DictAst*>(node));
-            break;
-        case AstType::SubscriptAstType:
-            visitSubscript(static_cast<SubscriptAst*>(node));
             break;
         case AstType::StarredAstType:
             visitStarred(static_cast<StarredAst*>(node));
@@ -146,6 +142,9 @@ void AstVisitor::visitNode(Ast* node)
             break;
         case AstType::TypeAnnotationAstType:
             visitTypeAnnotation(static_cast<TypeAnnotationAst*>(node));
+            break;
+        case AstType::SubtypeAstType:
+            visitSubtype(static_cast<SubtypeAst*>(node));
             break;
         case AstType::CurlyAstType:
             visitCurly(static_cast<CurlyAst*>(node));
@@ -165,38 +164,18 @@ void AstVisitor::visitNode(Ast* node)
         case AstType::RefAstType:
             visitRef(static_cast<RefAst*>(node));
             break;
-        case AstType::KwArgAstType:
-            visitKwArg(static_cast<KwArgAst*>(node));
-            break;
             
         // Top-level
         case AstType::TopLevelAstType:
-            visitCode(static_cast<CodeAst*>(node));
+            visitCode(static_cast<TopLevelAst*>(node));
             break;
-            
-        // Pattern
-        case AstType::PatternAstType:
-            visitPattern(static_cast<PatternAst*>(node));
-            break;
-        case AstType::MatchAstType:
-            visitMatch(static_cast<MatchAst*>(node));
-            break;
-            
+
         // Additional AST types
-        case AstType::ArgumentsAstType:
-            visitArguments(static_cast<ArgumentsAst*>(node));
-            break;
-        case AstType::ArgAstType:
-            visitArg(static_cast<ArgAst*>(node));
-            break;
-        case AstType::KeywordAstType:
-            visitKeyword(static_cast<KeywordAst*>(node));
-            break;
         case AstType::AliasAstType:
             visitAlias(static_cast<AliasAst*>(node));
             break;
-        case AstType::ExceptionHandlerAstType:
-            visitExceptionHandler(static_cast<ExceptionHandlerAst*>(node));
+        case AstType::CatchAstType:
+            visitCatch(static_cast<CatchAst*>(node));
             break;
         case AstType::ComprehensionAstType:
             visitComprehension(static_cast<ComprehensionAst*>(node));
@@ -205,12 +184,20 @@ void AstVisitor::visitNode(Ast* node)
             visitSlice(static_cast<SliceAst*>(node));
             break;
         case AstType::EllipsisAstType:
-            visitNode(static_cast<Ast*>(node));
+            visitEllipsis(static_cast<EllipsisAst*>(node));
             break;
-        case AstType::MatchCaseAstType:
-            visitMatchCase(static_cast<MatchCaseAst*>(node));
+        case AstType::WhereAstType:
+            visitWhere(static_cast<WhereAst*>(node));
             break;
-
+        case AstType::FilterAstType:
+            visitFilter(static_cast<FilterAst*>(node));
+            break;
+        case AstType::InAstType:
+            visitIn(static_cast<InAst*>(node));
+            break;
+        case AstType::IterationAstType:
+            visitIteration(static_cast<IterationAst*>(node));
+            break;
         default:
             break;
     }

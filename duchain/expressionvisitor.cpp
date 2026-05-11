@@ -13,7 +13,6 @@
 #include <language/duchain/declaration.h>
 
 #include "../parser/ast.h"
-#include "../types/types.h"
 #include "helpers.h"
 #include "juliadebug.h"
 
@@ -115,7 +114,7 @@ void ExpressionVisitor::visitCall(CallAst* node)
         return;
     }
 
-    Ast* funcNode = node->function;
+    Ast* funcNode = node->name;
     if (!funcNode) {
         qCDebug(KDEV_JULIA) << "  No function node, returning unknown";
         encounterUnknown();
@@ -177,86 +176,6 @@ void ExpressionVisitor::visitAttribute(AttributeAst* node)
     }
     
     setConfident(false);
-    encounterUnknown();
-}
-
-static QString binaryOpToString(BinaryOperationAst::Operator op)
-{
-    switch (op) {
-        case BinaryOperationAst::Operator::Add: return QStringLiteral("+");
-        case BinaryOperationAst::Operator::Sub: return QStringLiteral("-");
-        case BinaryOperationAst::Operator::Mul: return QStringLiteral("*");
-        case BinaryOperationAst::Operator::Div: return QStringLiteral("/");
-        case BinaryOperationAst::Operator::FloorDiv: return QStringLiteral("÷");
-        case BinaryOperationAst::Operator::Mod: return QStringLiteral("%");
-        case BinaryOperationAst::Operator::Pow: return QStringLiteral("^");
-        case BinaryOperationAst::Operator::And: return QStringLiteral("&&");
-        case BinaryOperationAst::Operator::Or: return QStringLiteral("||");
-        case BinaryOperationAst::Operator::Eq: return QStringLiteral("==");
-        case BinaryOperationAst::Operator::Ne: return QStringLiteral("!=");
-        case BinaryOperationAst::Operator::Lt: return QStringLiteral("<");
-        case BinaryOperationAst::Operator::Le: return QStringLiteral("<=");
-        case BinaryOperationAst::Operator::Gt: return QStringLiteral(">");
-        case BinaryOperationAst::Operator::Ge: return QStringLiteral(">=");
-        default: return QString();
-    }
-}
-
-static QString unaryOpToString(UnaryOperationAst::Operator op)
-{
-    switch (op) {
-        case UnaryOperationAst::Operator::UAdd: return QStringLiteral("+");
-        case UnaryOperationAst::Operator::USub: return QStringLiteral("-");
-        case UnaryOperationAst::Operator::Not: return QStringLiteral("!");
-        case UnaryOperationAst::Operator::Invert: return QStringLiteral("~");
-        default: return QString();
-    }
-}
-
-void ExpressionVisitor::visitBinaryOperation(BinaryOperationAst* node)
-{
-    if (!node || !node->left || !node->right) {
-        encounterUnknown();
-        return;
-    }
-    
-    ExpressionVisitor lhsVisitor(this);
-    ExpressionVisitor rhsVisitor(this);
-    
-    lhsVisitor.visitNode(node->left);
-    rhsVisitor.visitNode(node->right);
-    
-    QString opStr = binaryOpToString(node->op);
-    
-    if (!opStr.isEmpty()) {
-        processBinaryOperator(lhsVisitor.lastType(), rhsVisitor.lastType(), opStr);
-    } else {
-        encounterUnknown();
-    }
-}
-
-void ExpressionVisitor::visitUnaryOperation(UnaryOperationAst* node)
-{
-    if (!node || !node->operand) {
-        encounterUnknown();
-        return;
-    }
-    
-    ExpressionVisitor operandVisitor(this);
-    operandVisitor.visitNode(node->operand);
-    
-    QString opStr = unaryOpToString(node->op);
-    
-    if (opStr == QStringLiteral("-") || opStr == QStringLiteral("+")) {
-        encounter(operandVisitor.lastType());
-        return;
-    }
-    if (opStr == QStringLiteral("!")) {
-        auto boolType = KDevelop::AbstractType::Ptr(new KDevelop::IntegralType(KDevelop::IntegralType::TypeBoolean));
-        encounter(boolType);
-        return;
-    }
-    
     encounterUnknown();
 }
 
@@ -360,57 +279,6 @@ void ExpressionVisitor::visitDict(DictAst* node)
     }
     
     setConfident(false);
-    encounterUnknown();
-}
-
-void ExpressionVisitor::visitSubscript(SubscriptAst* node)
-{
-    if (!node || !node->value) {
-        encounterUnknown();
-        return;
-    }
-    
-    ExpressionVisitor valueVisitor(this);
-    valueVisitor.visitNode(node->value);
-    
-    auto baseType = valueVisitor.lastType();
-    if (!baseType) {
-        encounterUnknown();
-        return;
-    }
-    
-    if (auto arrayType = baseType.dynamicCast<KDevelop::ArrayType>()) {
-        encounter(arrayType->elementType());
-        return;
-    }
-    
-    setConfident(false);
-    encounterUnknown();
-}
-
-void ExpressionVisitor::processBinaryOperator(KDevelop::AbstractType::Ptr lhs, KDevelop::AbstractType::Ptr rhs, const QString& op)
-{
-    if (op == QStringLiteral("+") || op == QStringLiteral("-") || 
-        op == QStringLiteral("*") || op == QStringLiteral("/") ||
-        op == QStringLiteral("^") || op == QStringLiteral("%")) {
-        
-        if (lhs && rhs) {
-            encounter(lhs);
-            return;
-        }
-        auto mixedType = KDevelop::AbstractType::Ptr(new KDevelop::IntegralType(KDevelop::IntegralType::TypeMixed));
-        encounter(mixedType);
-        return;
-    }
-    
-    if (op == QStringLiteral("==") || op == QStringLiteral("!=") ||
-        op == QStringLiteral("<") || op == QStringLiteral(">") ||
-        op == QStringLiteral("<=") || op == QStringLiteral(">=")) {
-        auto boolType = KDevelop::AbstractType::Ptr(new KDevelop::IntegralType(KDevelop::IntegralType::TypeBoolean));
-        encounter(boolType);
-        return;
-    }
-    
     encounterUnknown();
 }
 

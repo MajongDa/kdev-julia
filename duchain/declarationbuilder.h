@@ -4,8 +4,14 @@
 #include <language/duchain/builders/abstractdeclarationbuilder.h>
 #include <language/duchain/builders/abstracttypebuilder.h>
 
+#include <language/duchain/types/integraltype.h>
+#include <language/duchain/types/functiontype.h>
+#include <language/duchain/types/pointertype.h>
+#include <language/duchain/types/arraytype.h>
+#include <language/duchain/types/containertypes.h>
+#include <language/duchain/types/unsuretype.h>
+
 #include "parser/ast.h"
-#include "types/types.h"
 #include "contextbuilder.h"
 
 namespace Julia {
@@ -30,9 +36,7 @@ protected:
 
     // Declaration creation via virtual dispatch (Python-style)
     void visitNode(Ast* node) override;
-    void visitCode(CodeAst* node) override;
     void visitFunctionDefinition(FunctionDefinitionAst* node) override;
-    void visitArguments(ArgumentsAst* node) override;
     void visitAssignment(AssignmentAst* node) override;
     void visitReturn(ReturnAst* node) override;
     void visitImport(ImportAst* node) override;
@@ -47,11 +51,10 @@ protected:
     void visitPrimitive(PrimitiveAst* node) override;
     void visitMacro(MacroAst* node) override;
     void visitConst(ConstAst* node) override;
-    void processArg(ArgAst* node, KDevelop::FunctionType::Ptr funcType, 
-                   int defaultValueIndex, ArgumentsAst* parentArgs);
 
 private:
     JuliaEditorIntegrator* m_editor;
+    void processParameter(Ast* arg, KDevelop::FunctionType::Ptr funcType);
 };
 
 }

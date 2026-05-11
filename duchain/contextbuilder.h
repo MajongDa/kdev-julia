@@ -34,7 +34,7 @@ protected:
 
     // Statements - override to create contexts
     void visitFunctionDefinition(FunctionDefinitionAst* node) override;
-    void visitFunctionArguments(FunctionDefinitionAst* node);
+    void visitCall(CallAst* node) override;
     void visitFunctionBody(FunctionDefinitionAst* node);
     void visitModule(ModuleAst* node) override;
     void visitBaremodule(BaremoduleAst* node) override;

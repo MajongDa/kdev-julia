@@ -14,10 +14,10 @@
 
 #include "juliabridge.h"
 #include "asttransformer.h"
-#include "../duchain/contextbuilder.h"
-#include "../duchain/declarationbuilder.h"
-#include "../duchain/usebuilder.h"
-#include "../duchain/juliaeditorintegrator.h"
+#include "duchain/contextbuilder.h"
+#include "duchain/declarationbuilder.h"
+#include "duchain/usebuilder.h"
+#include "duchain/juliaeditorintegrator.h"
 #include "juliadebug.h"
 
 namespace Julia {
@@ -126,7 +126,7 @@ bool JuliaParseJob::parseWithJuliaBridge(const QString& content)
 Ast* JuliaParseJob::parseJsonResponse(const QByteArray& json)
 {
     AstTransformer transformer;
-    CodeAst* code = transformer.parse(json);
+    TopLevelAst* code = transformer.parse(json);
     return code;
 }
 

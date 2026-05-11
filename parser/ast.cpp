@@ -1,18 +1,18 @@
-#include "juliadebug.h"
 #include "ast.h"
 #include "juliaastdefaultvisitor.h"
 
-namespace Julia {
+#include "juliadebug.h"
 
+namespace Julia {
 
 static void dumpNode(QString &r, QString prefix, const Ast* node)
 {
     r.append(prefix);
-    r.append(node ? node->dump(): QStringLiteral("None"));
+    r.append(node ? node->dump(): QLatin1String("None"));
 }
 
 template<class T>
-static void dumpList(QString &r, QString prefix, const T list,QString sep=QStringLiteral(", "))
+static void dumpList(QString &r, QString prefix, const T list,QString sep=QLatin1String(", "))
 {
     int i = 0;
     r.append(prefix);
@@ -49,167 +49,213 @@ IdentifierAst::IdentifierAst(Ast* parent, const QString& value)
 
 QString IdentifierAst::dump() const
 {
-    return QStringLiteral("Identifier(value='") + value + QStringLiteral("')");
+    return QLatin1String("Identifier(value='") + value + QLatin1String("')");
 }
 
 
 // Statement implementations
+FunctionSignatureAst::FunctionSignatureAst(Ast* parent)
+: Ast(parent)
+{
+}
+
+QString FunctionSignatureAst::dump() const
+{
+    QString r = QLatin1String("FunctionSignature(\n");
+    dumpNode(r, QLatin1String("name="), name);
+    dumpList(r, QLatin1String("\npostional="), positionalArgs);
+    dumpList(r, QLatin1String("\nkwargs="), keywordArgs);
+    dumpNode(r, QLatin1String("\nannotation="), returnType);
+    dumpList(r, QLatin1String("constraint="), whereConstraints);
+    r.append(QLatin1Char('\n'));
+    r.append(QLatin1String(")\n"));
+
+    return r;
+}
+
 FunctionDefinitionAst::FunctionDefinitionAst(Ast* parent)
-    : BodyAst(parent, AstType::FunctionDefinitionAstType), callSignature(nullptr), body(nullptr)
+    : Ast(parent, AstType::FunctionDefinitionAstType), signature(nullptr), block(nullptr)
 {
 }
 
 QString FunctionDefinitionAst::dump() const
 {
-    QString r = QStringLiteral("FunctionDefinition(\ncallSignature=");
-    dumpNode(r, QString(), callSignature);
-    dumpNode(r, QStringLiteral("\nbody="), body);
+    QString r = QLatin1String("FunctionDefinition(\nsignature=");
+    dumpNode(r, QString(), signature);
+    dumpNode(r, QLatin1String("\nbody="), block);
     r.append(QLatin1Char('\n'));
-    r.append(QStringLiteral(")\n"));
+    r.append(QLatin1String(")\n"));
 
     return r;
 }
 
 ReturnAst::ReturnAst(Ast* parent)
-    : BodyAst(parent, AstType::ReturnAstType)
+    : Ast(parent, AstType::ReturnAstType)
 {
 }
 
 QString ReturnAst::dump() const
 {
-    QString r = QStringLiteral("Return(\n");
-    dumpNode(r, QStringLiteral("value="), value);
+    QString r = QLatin1String("Return(\n");
+    dumpNode(r, QLatin1String("value="), value);
     r.append(QLatin1Char('\n'));
-    r.append(QStringLiteral(")"));
+    r.append(QLatin1String(")"));
     return r;
 }
 
-AssignmentAst::AssignmentAst(Ast* parent)
-    : BodyAst(parent, AstType::AssignmentAstType)
+AssignmentAst::AssignmentAst(Ast* parent, AstType type = AstType::AssignmentAstType)
+    : Ast(parent, type)
 {
 }
 
 QString AssignmentAst::dump() const
 {
-    QString r = QStringLiteral("Assignment(\n");
-    dumpList(r, QStringLiteral("targets="), targets, QStringLiteral(",\n"));
-    dumpNode(r, QStringLiteral("\nvalue="), value);
+    QString r = QLatin1String("Assignment(\n");
+    dumpNode(r, QLatin1String("target="), target);
+    dumpNode(r, QLatin1String("\nvalue="), value);
     r.append(QLatin1Char('\n'));
-    r.append(QStringLiteral(")"));
+    r.append(QLatin1String(")"));
+    return r;
+}
+
+CompoundAssignmentAst::CompoundAssignmentAst(Ast* parent)
+: AssignmentAst(parent, AstType::CompoundAssignmentAstType)
+{
+}
+
+QString CompoundAssignmentAst::dump() const
+{
+    QString r = QLatin1String("CompoundAssignment(\n");
+    dumpNode(r, QLatin1String("target="), target);
+    dumpNode(r, QLatin1String("\noperator="), compoundOperator);
+    dumpNode(r, QLatin1String("\nvalue="), value);
+    r.append(QLatin1String("\n)"));
     return r;
 }
 
 ForAst::ForAst(Ast* parent)
-    : BodyAst(parent, AstType::ForAstType)
+    : Ast(parent, AstType::ForAstType)
 {
 }
 
 QString ForAst::dump() const
 {
-    QString r = QStringLiteral("For(\n");
-    dumpNode(r, QStringLiteral("target="), target);
-    dumpNode(r, QStringLiteral("\niterator="), iterator);
-    dumpNode(r, QStringLiteral("\nbody="), body);
+    QString r = QLatin1String("For(\n");
+    dumpNode(r, QLatin1String("iterator="), iterator);
+    dumpNode(r, QLatin1String("\nbody="), block);
     r.append(QLatin1Char('\n'));
-    r.append(QStringLiteral(")"));
+    r.append(QLatin1String(")"));
     return r;
 }
 
 WhileAst::WhileAst(Ast* parent)
-    : BodyAst(parent, AstType::WhileAstType)
+    : Ast(parent, AstType::WhileAstType)
 {
 }
 
 QString WhileAst::dump() const
 {
-    QString r = QStringLiteral("While(\n");
-    dumpNode(r, QStringLiteral("condition="), condition);
-    dumpNode(r, QStringLiteral("\nbody="), body);
+    QString r = QLatin1String("While(\n");
+    dumpNode(r, QLatin1String("condition="), condition);
+    dumpNode(r, QLatin1String("\nbody="), block);
     r.append(QLatin1Char('\n'));
-    r.append(QStringLiteral(")"));
+    r.append(QLatin1String(")"));
     return r;
 }
 
 IfAst::IfAst(Ast* parent)
-    : BodyAst(parent, AstType::IfAstType)
+    : Ast(parent, AstType::IfAstType)
 {
 }
 
 QString IfAst::dump() const
 {
-    QString r = QStringLiteral("If(\n");
-    dumpNode(r, QStringLiteral("condition="), condition);
-    dumpNode(r, QStringLiteral("\nbody="), body);
-    dumpNode(r, QStringLiteral("\norelse="), orelse);
+    QString r = QLatin1String("If(\n");
+    dumpNode(r, QLatin1String("condition="), condition);
+    dumpNode(r, QLatin1String("\nbody="), block);
+    dumpNode(r, QLatin1String("\norelse="), orelse);
     r.append(QLatin1Char('\n'));
-    r.append(QStringLiteral(")"));
+    r.append(QLatin1String(")"));
     return r;
 }
 
 TryAst::TryAst(Ast* parent)
-    : BodyAst(parent, AstType::TryAstType)
+    : Ast(parent, AstType::TryAstType)
 {
 }
 
 QString TryAst::dump() const
 {
-    QString r = QStringLiteral("Try(\n");
-    dumpNode(r, QStringLiteral("body="), body);
-    dumpList(r, QStringLiteral("\nhandlers="), handlers, QStringLiteral(",\n  "));
-    dumpNode(r, QStringLiteral("\norelse="), orelse);
-    dumpNode(r, QStringLiteral("\nfinally="), finally);
+    QString r = QLatin1String("Try(\n");
+    dumpNode(r, QLatin1String("block="), block);
+    dumpNode(r, QLatin1String("\nhandler="), handler);
+    dumpNode(r, QLatin1String("\norelse="), orelse);
+    dumpNode(r, QLatin1String("\nfinally="), finally);
     r.append(QLatin1Char('\n'));
-    r.append(QStringLiteral(")"));
+    r.append(QLatin1String(")"));
     return r;
 }
 
 ImportAst::ImportAst(Ast* parent)
-    : BodyAst(parent, AstType::ImportAstType)
+    : Ast(parent, AstType::ImportAstType)
 {
 }
 
 QString ImportAst::dump() const
 {
-    QString r = QStringLiteral("Import(\n");
-    r.append(QStringLiteral("module=%1,\n").arg(module));
-    dumpList(r, QStringLiteral("names="), names, QStringLiteral(",\n"));
-    r.append(QLatin1Char('\n'));
-    r.append(QStringLiteral(")"));
+    QString r = QLatin1String("Import(\n");
+    dumpNode(r, QLatin1String("module="), module);
+    dumpList(r, QLatin1String("\nnames="), names, QLatin1String(",\n"));
+    r.append(QLatin1String("\n)"));
+    return r;
+}
+
+SelectiveImportAst::SelectiveImportAst(Ast* parent)
+: ImportAst(parent)
+{
+    astType = AstType::SelectiveImportAstType;
+}
+QString SelectiveImportAst::dump() const
+{
+    QString r = QLatin1String("SelectiveImport(\n");
+    dumpNode(r, QLatin1String("module="), module);
+    dumpList(r, QLatin1String("\nnames="), names);
+    r.append(QLatin1String("\n)"));
     return r;
 }
 
 GlobalAst::GlobalAst(Ast* parent)
-    : BodyAst(parent, AstType::GlobalAstType)
+    : Ast(parent, AstType::GlobalAstType)
 {
 }
 
 QString GlobalAst::dump() const
 {
-    QString r = QStringLiteral("Global(\n");
-    dumpList(r, QStringLiteral("names="), names, QStringLiteral(",\n"));
+    QString r = QLatin1String("Global(\n");
+    dumpList(r, QLatin1String("names="), names, QLatin1String(",\n"));
     r.append(QLatin1Char('\n'));
-    r.append(QStringLiteral(")"));
+    r.append(QLatin1String(")"));
     return r;
 }
 
 BreakAst::BreakAst(Ast* parent)
-    : BodyAst(parent, AstType::BreakAstType)
+    : Ast(parent, AstType::BreakAstType)
 {
 }
 
 ContinueAst::ContinueAst(Ast* parent)
-    : BodyAst(parent, AstType::ContinueAstType)
+    : Ast(parent, AstType::ContinueAstType)
 {
 }
 
 QString BreakAst::dump() const
 {
-    return QStringLiteral("Break()");
+    return QLatin1String("Break()");
 }
 
 QString ContinueAst::dump() const
 {
-    return QStringLiteral("Continue()");
+    return QLatin1String("Continue()");
 }
 
 // Control flow implementations
@@ -220,25 +266,11 @@ WhereAst::WhereAst(Ast* parent)
 
 QString WhereAst::dump() const
 {
-    QString r = QStringLiteral("Where(\n");
-    dumpList(r, QStringLiteral("constraints="), constraints, QStringLiteral(",\n"));
+    QString r = QLatin1String("Where(\n");
+    dumpNode(r, QLatin1String("signature="), signature);
+    dumpList(r, QLatin1String("\nconstraints="), constraints, QLatin1String(",\n"));
     r.append(QLatin1Char('\n'));
-    r.append(QStringLiteral(")"));
-    return r;
-}
-
-ElseIfAst::ElseIfAst(Ast* parent)
-    : BodyAst(parent, AstType::ElseIfAstType)
-{
-}
-
-QString ElseIfAst::dump() const
-{
-    QString r = QStringLiteral("ElseIf(\n");
-    dumpNode(r, QStringLiteral("condition="), condition);
-    dumpNode(r, QStringLiteral("\nbody="), body);
-    r.append(QLatin1Char('\n'));
-    r.append(QStringLiteral(")"));
+    r.append(QLatin1String(")"));
     return r;
 }
 
@@ -249,11 +281,11 @@ InAst::InAst(Ast* parent)
 
 QString InAst::dump() const
 {
-    QString r = QStringLiteral("In(\n");
-    dumpNode(r, QStringLiteral("target="), target);
-    dumpNode(r, QStringLiteral("\niter="), iter);
+    QString r = QLatin1String("In(\n");
+    dumpNode(r, QLatin1String("target="), target);
+    dumpNode(r, QLatin1String("\niter="), iter);
     r.append(QLatin1Char('\n'));
-    r.append(QStringLiteral(")"));
+    r.append(QLatin1String(")"));
     return r;
 }
 
@@ -264,10 +296,10 @@ IterationAst::IterationAst(Ast* parent)
 
 QString IterationAst::dump() const
 {
-    QString r = QStringLiteral("Iteration(\n");
-    dumpList(r, QStringLiteral("iterators="), iterators, QStringLiteral(",\n"));
+    QString r = QLatin1String("Iteration(\n");
+    dumpList(r, QLatin1String("iterators="), iterators, QLatin1String(",\n"));
     r.append(QLatin1Char('\n'));
-    r.append(QStringLiteral(")"));
+    r.append(QLatin1String(")"));
     return r;
 }
 
@@ -285,42 +317,13 @@ CallAst::CallAst(Ast* parent)
 
 QString CallAst::dump() const
 {
-    QString r = QStringLiteral("Call(\n");
-    dumpNode(r, QStringLiteral("name="), name);
-    dumpList(r, QStringLiteral("\narguments="), arguments, QStringLiteral(",\n"));
-    dumpNode(r, QStringLiteral("\nvararg="), vararg);
-    dumpNode(r, QStringLiteral("\nkwarg="), kwarg);
+    QString r = QLatin1String("Call(\n");
+    dumpNode(r, QLatin1String("name="), name);
+    dumpList(r, QLatin1String("\narguments="), arguments, QLatin1String(",\n"));
+    // dumpNode(r, QLatin1String("\nvararg="), vararg);
+    // dumpNode(r, QLatin1String("\nkwarg="), kwarg);
     r.append(QLatin1Char('\n'));
-    r.append(QStringLiteral(")"));
-    return r;
-}
-
-BinaryOperationAst::BinaryOperationAst(Ast* parent)
-    : ExpressionAst(parent, AstType::BinaryOperationAstType), op(Operator::Add)
-{
-}
-
-QString BinaryOperationAst::dump() const
-{
-    QString r = QStringLiteral("BinaryOperation(\n");
-    dumpNode(r, QStringLiteral("left="), left);
-    dumpNode(r, QStringLiteral("\nright="), right);
-    r.append(QLatin1Char('\n'));
-    r.append(QStringLiteral(")"));
-    return r;
-}
-
-UnaryOperationAst::UnaryOperationAst(Ast* parent)
-    : ExpressionAst(parent, AstType::UnaryOperationAstType), op(Operator::UAdd)
-{
-}
-
-QString UnaryOperationAst::dump() const
-{
-    QString r = QStringLiteral("UnaryOperation(\n");
-    dumpNode(r, QStringLiteral("operand="), operand);
-    r.append(QLatin1Char('\n'));
-    r.append(QStringLiteral(")"));
+    r.append(QLatin1String(")"));
     return r;
 }
 
@@ -331,10 +334,10 @@ NumberAst::NumberAst(Ast* parent, AstType type)
 
 QString NumberAst::dump() const
 {
-    QString r = QStringLiteral("Number(\n");
-    r.append(QStringLiteral("value=%1,\n").arg(value));
-    r.append(QStringLiteral("isInt=%1\n").arg(isInt ? "true" : "false"));
-    r.append(QStringLiteral(")"));
+    QString r = QLatin1String("Number(\n");
+    r.append(QLatin1String("value=%1,\n").arg(value));
+    r.append(QLatin1String("isInt=%1\n").arg(isInt ? "true" : "false"));
+    r.append(QLatin1String(")"));
     return r;
 }
 
@@ -345,7 +348,7 @@ StringAst::StringAst(Ast* parent, AstType type)
 
 QString StringAst::dump() const
 {
-    return QStringLiteral("String(value='") + value + QStringLiteral("')");
+    return QLatin1String("String(value='") + value + QLatin1String("')");
 }
 
 ListAst::ListAst(Ast* parent)
@@ -355,10 +358,10 @@ ListAst::ListAst(Ast* parent)
 
 QString ListAst::dump() const
 {
-    QString r = QStringLiteral("List(\n");
-    dumpList(r, QStringLiteral("elements="), elements, QStringLiteral(",\n"));
+    QString r = QLatin1String("List(\n");
+    dumpList(r, QLatin1String("elements="), elements, QLatin1String(",\n"));
     r.append(QLatin1Char('\n'));
-    r.append(QStringLiteral(")"));
+    r.append(QLatin1String(")"));
     return r;
 }
 
@@ -369,10 +372,10 @@ TupleAst::TupleAst(Ast* parent)
 
 QString TupleAst::dump() const
 {
-    QString r = QStringLiteral("Tuple(\n");
-    dumpList(r, QStringLiteral("elements="), elements, QStringLiteral(",\n"));
+    QString r = QLatin1String("Tuple(\n");
+    dumpList(r, QLatin1String("elements="), elements, QLatin1String(",\n"));
     r.append(QLatin1Char('\n'));
-    r.append(QStringLiteral(")"));
+    r.append(QLatin1String(")"));
     return r;
 }
 
@@ -383,26 +386,11 @@ DictAst::DictAst(Ast* parent)
 
 QString DictAst::dump() const
 {
-    QString r = QStringLiteral("Dict(\n");
-    dumpList(r, QStringLiteral("keys="), keys, QStringLiteral(",\n"));
-    dumpList(r, QStringLiteral("\nvalues="), values, QStringLiteral(",\n"));
+    QString r = QLatin1String("Dict(\n");
+    dumpList(r, QLatin1String("keys="), keys, QLatin1String(",\n"));
+    dumpList(r, QLatin1String("\nvalues="), values, QLatin1String(",\n"));
     r.append(QLatin1Char('\n'));
-    r.append(QStringLiteral(")"));
-    return r;
-}
-
-SubscriptAst::SubscriptAst(Ast* parent)
-    : ExpressionAst(parent, AstType::SubscriptAstType)
-{
-}
-
-QString SubscriptAst::dump() const
-{
-    QString r = QStringLiteral("Subscript(\n");
-    dumpNode(r, QStringLiteral("value="), value);
-    dumpNode(r, QStringLiteral("\nslice="), slice);
-    r.append(QLatin1Char('\n'));
-    r.append(QStringLiteral(")"));
+    r.append(QLatin1String(")"));
     return r;
 }
 
@@ -413,11 +401,11 @@ AttributeAst::AttributeAst(Ast* parent)
 
 QString AttributeAst::dump() const
 {
-    QString r = QStringLiteral("Attribute(\n");
-    dumpNode(r, QStringLiteral("value="), value);
-    dumpNode(r, QStringLiteral("\nattribute="), attribute);
+    QString r = QLatin1String("Attribute(\n");
+    dumpNode(r, QLatin1String("value="), value);
+    dumpNode(r, QLatin1String("\nattribute="), attribute);
     r.append(QLatin1Char('\n'));
-    r.append(QStringLiteral(")"));
+    r.append(QLatin1String(")"));
     return r;
 }
 
@@ -428,10 +416,10 @@ StarredAst::StarredAst(Ast* parent)
 
 QString StarredAst::dump() const
 {
-    QString r = QStringLiteral("Starred(\n");
-    dumpNode(r, QStringLiteral("value="), value);
+    QString r = QLatin1String("Starred(\n");
+    dumpNode(r, QLatin1String("value="), value);
     r.append(QLatin1Char('\n'));
-    r.append(QStringLiteral(")"));
+    r.append(QLatin1String(")"));
     return r;
 }
 
@@ -442,11 +430,11 @@ LambdaAst::LambdaAst(Ast* parent)
 
 QString LambdaAst::dump() const
 {
-    QString r = QStringLiteral("Lambda(\n");
-    dumpNode(r, QStringLiteral("arguments="), arguments);
-    dumpNode(r, QStringLiteral("\nbody="), body);
+    QString r = QLatin1String("Lambda(\n");
+    dumpNode(r, QLatin1String("arguments="), arguments);
+    dumpNode(r, QLatin1String("\nbody="), block);
     r.append(QLatin1Char('\n'));
-    r.append(QStringLiteral(")"));
+    r.append(QLatin1String(")"));
     return r;
 }
 
@@ -457,121 +445,44 @@ IfExpressionAst::IfExpressionAst(Ast* parent)
 
 QString IfExpressionAst::dump() const
 {
-    QString r = QStringLiteral("IfExpression(\n");
-    dumpNode(r, QStringLiteral("condition="), condition);
-    dumpNode(r, QStringLiteral("\nbody="), body);
-    dumpNode(r, QStringLiteral("\norelse="), orelse);
+    QString r = QLatin1String("IfExpression(\n");
+    dumpNode(r, QLatin1String("condition="), condition);
+    dumpNode(r, QLatin1String("\nbody="), block);
+    dumpNode(r, QLatin1String("\norelse="), orelse);
     r.append(QLatin1Char('\n'));
-    r.append(QStringLiteral(")"));
+    r.append(QLatin1String(")"));
     return r;
 }
-
-
-// Pattern implementations
-
-
-MatchCaseAst::MatchCaseAst(Ast* parent)
-    : Ast(parent, AstType::PatternAstType)
-{
-}
-
-QString MatchCaseAst::dump() const
-{
-    QString r = QStringLiteral("MatchCase(\n");
-    dumpNode(r, QStringLiteral("pattern="), pattern);
-    dumpNode(r, QStringLiteral("\nguard="), guard);
-    dumpList(r, QStringLiteral("\nbody="), body, QStringLiteral(",\n"));
-    r.append(QLatin1Char('\n'));
-    r.append(QStringLiteral(")"));
-    return r;
-}
-
-MatchAst::MatchAst(Ast* parent)
-    : Ast(parent, AstType::PatternAstType)
-{
-}
-
-QString MatchAst::dump() const
-{
-    QString r = QStringLiteral("Match(\n");
-    dumpNode(r, QStringLiteral("subject="), subject);
-    dumpList(r, QStringLiteral("\ncases="), cases, QStringLiteral(",\n"));
-    r.append(QLatin1Char('\n'));
-    r.append(QStringLiteral(")"));
-    return r;
-}
-
 
 // Other AST implementations
-
-
-ArgumentsAst::ArgumentsAst(Ast* parent)
-    : Ast(parent, AstType::BodyAstType)
-{
-}
-
-QString ArgumentsAst::dump() const
-{
-    return QStringLiteral("Arguments()");
-}
-
-ArgAst::ArgAst(Ast* parent)
-    : Ast(parent, AstType::ArgAstType)
-{
-}
-
-QString ArgAst::dump() const
-{
-    QString r = QStringLiteral("Arg(\n");
-    dumpNode(r, QStringLiteral("name="), argumentName);
-    r.append(QLatin1Char('\n'));
-    r.append(QStringLiteral(")"));
-    return r;
-}
-
-KeywordAst::KeywordAst(Ast* parent)
-    : Ast(parent, AstType::BodyAstType)
-{
-}
-
-QString KeywordAst::dump() const
-{
-    QString r = QStringLiteral("Keyword(\n");
-    dumpNode(r, QStringLiteral("argumentName="), argumentName);
-    dumpNode(r, QStringLiteral("\nvalue="), value);
-    r.append(QLatin1Char('\n'));
-    r.append(QStringLiteral(")"));
-    return r;
-}
-
 AliasAst::AliasAst(Ast* parent)
-    : Ast(parent, AstType::BodyAstType)
+    : Ast(parent, AstType::BlockAstType)
 {
 }
 
 QString AliasAst::dump() const
 {
-    QString r = QStringLiteral("Alias(\n");
-    dumpNode(r, QStringLiteral("name="), name);
-    dumpNode(r, QStringLiteral("\nasName="), asName);
+    QString r = QLatin1String("Alias(\n");
+    dumpNode(r, QLatin1String("name="), name);
+    dumpNode(r, QLatin1String("\nasName="), asName);
     r.append(QLatin1Char('\n'));
-    r.append(QStringLiteral(")"));
+    r.append(QLatin1String(")"));
     return r;
 }
 
-ExceptionHandlerAst::ExceptionHandlerAst(Ast* parent)
-    : Ast(parent, AstType::BodyAstType)
+CatchAst::CatchAst(Ast* parent)
+    : Ast(parent, AstType::CatchAstType)
 {
 }
 
-QString ExceptionHandlerAst::dump() const
+QString CatchAst::dump() const
 {
-    QString r = QStringLiteral("ExceptionHandler(\n");
-    dumpNode(r, QStringLiteral("type="), type);
-    dumpNode(r, QStringLiteral("\nname="), name);
-    dumpList(r, QStringLiteral("\nbody="), body, QStringLiteral(",\n"));
+    QString r = QLatin1String("ExceptionHandler(\n");
+    dumpNode(r, QLatin1String("type="), type);
+    dumpNode(r, QLatin1String("\nname="), name);
+    dumpNode(r, QLatin1String("\nbody="), block);
     r.append(QLatin1Char('\n'));
-    r.append(QStringLiteral(")"));
+    r.append(QLatin1String(")"));
     return r;
 }
 
@@ -582,12 +493,12 @@ ComprehensionAst::ComprehensionAst(Ast* parent)
 
 QString ComprehensionAst::dump() const
 {
-    QString r = QStringLiteral("Comprehension(\n");
-    dumpNode(r, QStringLiteral("target="), target);
-    dumpNode(r, QStringLiteral("\niterator="), iterator);
-    dumpList(r, QStringLiteral("\nconditions="), conditions, QStringLiteral(",\n"));
+    QString r = QLatin1String("Comprehension(\n");
+    dumpNode(r, QLatin1String("target="), target);
+    dumpNode(r, QLatin1String("\niterator="), iterator);
+    dumpList(r, QLatin1String("\nconditions="), conditions, QLatin1String(",\n"));
     r.append(QLatin1Char('\n'));
-    r.append(QStringLiteral(")"));
+    r.append(QLatin1String(")"));
     return r;
 }
 
@@ -598,49 +509,49 @@ SliceAst::SliceAst(Ast* parent)
 
 QString SliceAst::dump() const
 {
-    QString r = QStringLiteral("Slice(\n");
-    dumpNode(r, QStringLiteral("lower="), lower);
-    dumpNode(r, QStringLiteral("\nupper="), upper);
-    dumpNode(r, QStringLiteral("\nstep="), step);
+    QString r = QLatin1String("Slice(\n");
+    dumpNode(r, QLatin1String("lower="), lower);
+    dumpNode(r, QLatin1String("\nupper="), upper);
+    dumpNode(r, QLatin1String("\nstep="), step);
     r.append(QLatin1Char('\n'));
-    r.append(QStringLiteral(")"));
+    r.append(QLatin1String(")"));
     return r;
 }
 
 
-// CodeAst implementation
-CodeAst::CodeAst()
+// TopLevel implementation
+TopLevelAst::TopLevelAst()
     : Ast(nullptr, AstType::TopLevelAstType), name(nullptr)
 {
 }
 
-CodeAst::~CodeAst()
+TopLevelAst::~TopLevelAst()
 {
     free_ast_recursive(this);
 }
 
-QString CodeAst::dump() const
+QString TopLevelAst::dump() const
 {
     QString r;
-    r.append(QStringLiteral("Module("));
-    dumpNode(r, QStringLiteral("name="), name);
-    dumpList(r, QStringLiteral(", children="), children, QStringLiteral(",\n  "));
-    r.append(QStringLiteral(")\n"));
+    r.append(QLatin1String("Module("));
+    dumpNode(r, QLatin1String("name="), name);
+    dumpList(r, QLatin1String(", children="), children, QLatin1String(",\n  "));
+    r.append(QLatin1String(")\n"));
     return r;
 }
 
 
 // Julia-specific statement implementations
-BodyAst::BodyAst(Ast* parent, AstType type = AstType::BodyAstType)
+BlockAst::BlockAst(Ast* parent, AstType type = AstType::BlockAstType)
     : Ast(parent, type)
 {
 }
 
-QString BodyAst::dump() const
+QString BlockAst::dump() const
 {
     QString r;
-    r.append(QStringLiteral("Block("));
-    dumpList(r, QStringLiteral("body="), body, QStringLiteral(",\n  "));
+    r.append(QLatin1String("Block("));
+    dumpList(r, QLatin1String("block="), block, QLatin1String(",\n  "));
     r.append(QLatin1Char(')'));
     return r;
 }
@@ -648,182 +559,177 @@ QString BodyAst::dump() const
 
 
 ModuleAst::ModuleAst(Ast* parent)
-    : BodyAst(parent, AstType::ModuleAstType)
+    : Ast(parent, AstType::ModuleAstType)
 {
 }
 
 QString ModuleAst::dump() const
 {
-    QString r = QStringLiteral("Module(\n");
-    dumpNode(r, QStringLiteral("name="), name);
-    dumpNode(r, QStringLiteral("\nbody="), body);
+    QString r = QLatin1String("Module(\n");
+    dumpNode(r, QLatin1String("name="), name);
+    dumpNode(r, QLatin1String("\nbody="), block);
     r.append(QLatin1Char('\n'));
-    r.append(QStringLiteral(")"));
+    r.append(QLatin1String(")"));
     return r;
 }
 
 BaremoduleAst::BaremoduleAst(Ast* parent)
-    : BodyAst(parent, AstType::BaremoduleAstType)
+    : Ast(parent, AstType::BaremoduleAstType)
 {
 }
 
 QString BaremoduleAst::dump() const
 {
-    QString r = QStringLiteral("Baremodule(\n");
-    dumpNode(r, QStringLiteral("name="), name);
-    dumpNode(r, QStringLiteral("\nbody="), body);
+    QString r = QLatin1String("Baremodule(\n");
+    dumpNode(r, QLatin1String("name="), name);
+    dumpNode(r, QLatin1String("\nbody="), block);
     r.append(QLatin1Char('\n'));
-    r.append(QStringLiteral(")"));
+    r.append(QLatin1String(")"));
     return r;
 }
 
 StructAst::StructAst(Ast* parent)
-    : BodyAst(parent, AstType::StructAstType)
+    : Ast(parent, AstType::StructAstType)
 {
 }
 
 QString StructAst::dump() const
 {
-    QString r = QStringLiteral("Struct(mutable=%1,\n").arg(isMutable ? "true" : "false");
-    dumpNode(r, QStringLiteral("name="), name);
-    dumpNode(r, QStringLiteral("\ntypeParameters="), typeParameters);
-    dumpNode(r, QStringLiteral("\nbody="), body);
+    QString r = QLatin1String("Struct(mutable=%1,\n").arg(isMutable ? "true" : "false");
+    dumpNode(r, QLatin1String("signature="), signature);
+    dumpNode(r, QLatin1String("\nbody="), block);
     r.append(QLatin1Char('\n'));
-    r.append(QStringLiteral(")"));
+    r.append(QLatin1String(")"));
     return r;
 }
 
 AbstractAst::AbstractAst(Ast* parent)
-    : BodyAst(parent, AstType::AbstractAstType)
+    : Ast(parent, AstType::AbstractAstType)
 {
 }
 
 QString AbstractAst::dump() const
 {
-    QString r = QStringLiteral("Abstract(\n");
-    dumpNode(r, QStringLiteral("name="), name);
-    dumpNode(r, QStringLiteral("\ntypeParameters="), typeParameters);
+    QString r = QLatin1String("Abstract(\n");
+    dumpNode(r, QLatin1String("signature="), signature);
     r.append(QLatin1Char('\n'));
-    r.append(QStringLiteral(")"));
+    r.append(QLatin1String(")"));
     return r;
 }
 
 PrimitiveAst::PrimitiveAst(Ast* parent)
-    : BodyAst(parent, AstType::PrimitiveAstType)
+    : Ast(parent, AstType::PrimitiveAstType)
 {
 }
 
 QString PrimitiveAst::dump() const
 {
-    QString r = QStringLiteral("Primitive(\n");
-    dumpNode(r, QStringLiteral("name="), name);
-    dumpNode(r, QStringLiteral("\ntypeParameters="), typeParameters);
-    dumpNode(r, QStringLiteral("\nunderlyingType="), underlyingType);
+    QString r = QLatin1String("Primitive(\n");
+    dumpNode(r, QLatin1String("signature="), signature);
     r.append(QLatin1Char('\n'));
-    r.append(QStringLiteral(")"));
+    r.append(QLatin1String(")"));
     return r;
 }
 
 MacroAst::MacroAst(Ast* parent)
-    : BodyAst(parent, AstType::MacroAstType)
+    : Ast(parent, AstType::MacroAstType)
 {
 }
 
 QString MacroAst::dump() const
 {
-    QString r = QStringLiteral("Macro(\n");
-    dumpNode(r, QStringLiteral("name="), name);
-    dumpNode(r, QStringLiteral("\nparameters="), parameters);
-    dumpNode(r, QStringLiteral("\nbody="), body);
+    QString r = QLatin1String("Macro(\n");
+    dumpNode(r, QLatin1String("signature="), signature);
+    dumpNode(r, QLatin1String("\nbody="), block);
     r.append(QLatin1Char('\n'));
-    r.append(QStringLiteral(")"));
+    r.append(QLatin1String(")"));
     return r;
 }
 
 UsingAst::UsingAst(Ast* parent)
-    : BodyAst(parent, AstType::UsingAstType)
+    : Ast(parent, AstType::UsingAstType)
 {
 }
 
 QString UsingAst::dump() const
 {
-    QString r = QStringLiteral("Using(\n");
-    dumpList(r, QStringLiteral("names="), names, QStringLiteral(",\n"));
+    QString r = QLatin1String("Using(\n");
+    dumpList(r, QLatin1String("names="), names, QLatin1String(",\n"));
     r.append(QLatin1Char('\n'));
-    r.append(QStringLiteral(")"));
+    r.append(QLatin1String(")"));
     return r;
 }
 
 ExportAst::ExportAst(Ast* parent)
-    : BodyAst(parent, AstType::ExportAstType)
+    : Ast(parent, AstType::ExportAstType)
 {
 }
 
 QString ExportAst::dump() const
 {
-    QString r = QStringLiteral("Export(\n");
-    dumpList(r, QStringLiteral("names="), names, QStringLiteral(",\n"));
+    QString r = QLatin1String("Export(\n");
+    dumpList(r, QLatin1String("names="), names, QLatin1String(",\n"));
     r.append(QLatin1Char('\n'));
-    r.append(QStringLiteral(")"));
+    r.append(QLatin1String(")"));
     return r;
 }
 
 ConstAst::ConstAst(Ast* parent)
-    : BodyAst(parent, AstType::ConstAstType)
+    : Ast(parent, AstType::ConstAstType)
 {
 }
 
 QString ConstAst::dump() const
 {
-    QString r = QStringLiteral("Const(\n");
-    dumpNode(r, QStringLiteral("target="), target);
-    dumpNode(r, QStringLiteral("\nvalue="), value);
+    QString r = QLatin1String("Const(\n");
+    dumpNode(r, QLatin1String("target="), target);
+    dumpNode(r, QLatin1String("\nvalue="), value);
     r.append(QLatin1Char('\n'));
-    r.append(QStringLiteral(")"));
+    r.append(QLatin1String(")"));
     return r;
 }
 
 LocalAst::LocalAst(Ast* parent)
-    : BodyAst(parent, AstType::LocalAstType)
+    : Ast(parent, AstType::LocalAstType)
 {
 }
 
 QString LocalAst::dump() const
 {
-    QString r = QStringLiteral("Local(\n");
-    dumpList(r, QStringLiteral("names="), names, QStringLiteral(",\n"));
+    QString r = QLatin1String("Local(\n");
+    dumpList(r, QLatin1String("names="), names, QLatin1String(",\n"));
     r.append(QLatin1Char('\n'));
-    r.append(QStringLiteral(")"));
+    r.append(QLatin1String(")"));
     return r;
 }
 
 LetAst::LetAst(Ast* parent)
-    : BodyAst(parent, AstType::LetAstType)
+    : Ast(parent, AstType::LetAstType)
 {
 }
 
 QString LetAst::dump() const
 {
-    QString r = QStringLiteral("Let(\n");
-    dumpList(r, QStringLiteral("bindings="), bindings, QStringLiteral(",\n"));
-    dumpList(r, QStringLiteral("\nbody="), body, QStringLiteral(",\n"));
+    QString r = QLatin1String("Let(\n");
+    dumpList(r, QLatin1String("bindings="), bindings, QLatin1String(",\n"));
+    dumpList(r, QLatin1String("\nbody="), block, QLatin1String(",\n"));
     r.append(QLatin1Char('\n'));
-    r.append(QStringLiteral(")"));
+    r.append(QLatin1String(")"));
     return r;
 }
 
 DoAst::DoAst(Ast* parent)
-    : BodyAst(parent, AstType::DoAstType)
+    : Ast(parent, AstType::DoAstType)
 {
 }
 
 QString DoAst::dump() const
 {
-    QString r = QStringLiteral("Do(\n");
-    dumpNode(r, QStringLiteral("call="), call);
-    dumpList(r, QStringLiteral("\nbody="), body, QStringLiteral(",\n"));
+    QString r = QLatin1String("Do(\n");
+    dumpNode(r, QLatin1String("call="), call);
+    dumpList(r, QLatin1String("\nbody="), block, QLatin1String(",\n"));
     r.append(QLatin1Char('\n'));
-    r.append(QStringLiteral(")"));
+    r.append(QLatin1String(")"));
     return r;
 }
 
@@ -836,9 +742,9 @@ EllipsisAst::EllipsisAst(Ast* parent)
 
 QString EllipsisAst::dump() const
 {
-    QString r = QStringLiteral("Ellipsis( ");
-    dumpNode(r, QStringLiteral("name="), name);
-    r.append(QStringLiteral(")\n"));
+    QString r = QLatin1String("Ellipsis( ");
+    dumpNode(r, QLatin1String("name="), name);
+    r.append(QLatin1String(")\n"));
     return r;
 }
 
@@ -849,11 +755,11 @@ ParameterAst::ParameterAst(Ast* parent)
 
 QString ParameterAst::dump() const
 {
-    QString r = QStringLiteral("Parameter(\n");
-    dumpList(r, QStringLiteral("kwargs="), kwargs, QStringLiteral(",\n"));
-    dumpNode(r, QStringLiteral("\nellipsis="), ellipsis);
+    QString r = QLatin1String("Parameter(\n");
+    dumpList(r, QLatin1String("kwargs="), kwargs, QLatin1String(",\n"));
+    // dumpNode(r, QLatin1String("\nellipsis="), ellipsis);
     r.append(QLatin1Char('\n'));
-    r.append(QStringLiteral(")"));
+    r.append(QLatin1String(")"));
     return r;
 }
 
@@ -864,11 +770,25 @@ TypeAnnotationAst::TypeAnnotationAst(Ast* parent)
 
 QString TypeAnnotationAst::dump() const
 {
-    QString r = QStringLiteral("TypeAnnotation(\n");
-    dumpNode(r, QStringLiteral("value="), value);
-    dumpNode(r, QStringLiteral("\ntype="), type);
+    QString r = QLatin1String("TypeAnnotation(\n");
+    dumpNode(r, QLatin1String("value="), value);
+    dumpNode(r, QLatin1String("\ntype="), type);
     r.append(QLatin1Char('\n'));
-    r.append(QStringLiteral(")"));
+    r.append(QLatin1String(")"));
+    return r;
+}
+
+SubtypeAst::SubtypeAst(Ast* parent)
+: ExpressionAst(parent, AstType::SubtypeAstType)
+{
+}
+
+QString SubtypeAst::dump() const
+{
+    QString r = QLatin1String("Subtype(\n");
+    dumpNode(r, QLatin1String("left="), left);
+    dumpNode(r, QLatin1String("\nright="), right);
+    r.append(QLatin1String("\n)"));
     return r;
 }
 
@@ -879,11 +799,11 @@ CurlyAst::CurlyAst(Ast* parent)
 
 QString CurlyAst::dump() const
 {
-    QString r = QStringLiteral("Curly(\n");
-    dumpNode(r, QStringLiteral("name="), name);
-    dumpList(r, QStringLiteral("\nparameters="), parameters, QStringLiteral(",\n"));
+    QString r = QLatin1String("Curly(\n");
+    dumpNode(r, QLatin1String("name="), name);
+    dumpList(r, QLatin1String("\nparameters="), parameters, QLatin1String(",\n"));
     r.append(QLatin1Char('\n'));
-    r.append(QStringLiteral(")"));
+    r.append(QLatin1String(")"));
     return r;
 }
 
@@ -894,11 +814,10 @@ ImportPathAst::ImportPathAst(Ast* parent)
 
 QString ImportPathAst::dump() const
 {
-    QString r = QStringLiteral("ImportPath(\n");
-    dumpList(r, QStringLiteral("names="), names, QStringLiteral(",\n"));
-    dumpNode(r, QStringLiteral("\nasName="), asName);
+    QString r = QLatin1String("ImportPath(\n");
+    dumpList(r, QLatin1String("names="), names, QLatin1String(",\n"));
     r.append(QLatin1Char('\n'));
-    r.append(QStringLiteral(")"));
+    r.append(QLatin1String(")"));
     return r;
 }
 
@@ -909,12 +828,25 @@ GeneratorAst::GeneratorAst(Ast* parent)
 
 QString GeneratorAst::dump() const
 {
-    QString r = QStringLiteral("Generator(\n");
-    dumpNode(r, QStringLiteral("expression="), expression);
-    dumpNode(r, QStringLiteral("\niterator="), iterator);
-    dumpList(r, QStringLiteral("\nfilters="), filters, QStringLiteral(",\n"));
+    QString r = QLatin1String("Generator(\n");
+    dumpNode(r, QLatin1String("expression="), expression);
+    dumpNode(r, QLatin1String("\niterator="), iterator);
+    dumpList(r, QLatin1String("\nfilters="), filters, QLatin1String(",\n"));
     r.append(QLatin1Char('\n'));
-    r.append(QStringLiteral(")"));
+    r.append(QLatin1String(")"));
+    return r;
+}
+
+FilterAst::FilterAst(Ast* parent)
+: ExpressionAst(parent, AstType::FilterAstType)
+{
+}
+QString FilterAst::dump() const
+{
+    QString r = QLatin1String("Filter(\n");
+    dumpNode(r, QLatin1String("iterator="), iterator);
+    dumpNode(r, QLatin1String("\ncondition="), condition);
+    r.append(QLatin1String("\n)"));
     return r;
 }
 
@@ -925,10 +857,10 @@ InterpolatedStringAst::InterpolatedStringAst(Ast* parent)
 
 QString InterpolatedStringAst::dump() const
 {
-    QString r = QStringLiteral("InterpolatedString(\n");
-    dumpList(r, QStringLiteral("parts="), parts, QStringLiteral(",\n"));
+    QString r = QLatin1String("InterpolatedString(\n");
+    dumpList(r, QLatin1String("parts="), parts, QLatin1String(",\n"));
     r.append(QLatin1Char('\n'));
-    r.append(QStringLiteral(")"));
+    r.append(QLatin1String(")"));
     return r;
 }
 
@@ -939,11 +871,11 @@ MacroCallAst::MacroCallAst(Ast* parent)
 
 QString MacroCallAst::dump() const
 {
-    QString r = QStringLiteral("MacroCall(\n");
-    dumpNode(r, QStringLiteral("name="), name);
-    dumpList(r, QStringLiteral("\narguments="), arguments, QStringLiteral(",\n"));
+    QString r = QLatin1String("MacroCall(\n");
+    dumpNode(r, QLatin1String("name="), name);
+    dumpList(r, QLatin1String("\narguments="), arguments, QLatin1String(",\n"));
     r.append(QLatin1Char('\n'));
-    r.append(QStringLiteral(")"));
+    r.append(QLatin1String(")"));
     return r;
 }
 
@@ -954,27 +886,11 @@ RefAst::RefAst(Ast* parent)
 
 QString RefAst::dump() const
 {
-    QString r = QStringLiteral("Ref(\n");
-    dumpNode(r, QStringLiteral("value="), value);
-    dumpList(r, QStringLiteral("\nindices="), indices, QStringLiteral(",\n"));
+    QString r = QLatin1String("Ref(\n");
+    dumpNode(r, QLatin1String("value="), value);
+    dumpList(r, QLatin1String("\nindices="), indices, QLatin1String(",\n"));
     r.append(QLatin1Char('\n'));
-    r.append(QStringLiteral(")"));
+    r.append(QLatin1String(")"));
     return r;
 }
-
-KwArgAst::KwArgAst(Ast* parent)
-    : ExpressionAst(parent, AstType::KwArgAstType)
-{
-}
-
-QString KwArgAst::dump() const
-{
-    QString r = QStringLiteral("KwArg(\n");
-    dumpNode(r, QStringLiteral("key="), key);
-    dumpNode(r, QStringLiteral("\nvalue="), value);
-    r.append(QLatin1Char('\n'));
-    r.append(QStringLiteral(")"));
-    return r;
-}
-
 } // namespace Julia

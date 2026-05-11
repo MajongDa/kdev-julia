@@ -37,12 +37,23 @@ void UseBuilder::visitIdentifier(IdentifierAst* node)
 
     // Find context at identifier position
     KDevelop::DUContext* ctx = nullptr;
-    {
-        KDevelop::DUChainReadLocker lock(KDevelop::DUChain::lock());
-        ctx = topContext()->findContextAt(node->range().start, true);
+    
+    // First try to get context from AST node (set by ContextBuilder)
+    // Cast to Ast* to access base class context field (IdentifierAst has enum context)
+    auto* astNode = dynamic_cast<Ast*>(node);
+    if (astNode && astNode->context) {
+        ctx = astNode->context;
     }
     if (!ctx) {
         ctx = currentContext();
+    }
+    // Only try context search if we have a valid context
+    if (ctx) {
+        KDevelop::DUChainReadLocker lock(KDevelop::DUChain::lock());
+        auto* found = ctx->findContextAt(node->range().start, true);
+        if (found) {
+            ctx = found;
+        }
     }
     
     if (!ctx) {
@@ -77,8 +88,8 @@ void UseBuilder::visitCall(CallAst* node)
     qCDebug(KDEV_JULIA) << ">>> UseBuilder::visitCall:" << node->range();
 
     // Visit function to find its declaration
-    if (node->function) {
-        visitNode(node->function);
+    if (node->name) {
+        visitNode(node->name);
     }
 
     qCDebug(KDEV_JULIA) << "<<< UseBuilder::visitCall DONE";

@@ -1,10 +1,11 @@
-#include "juliaastdefaultvisitor.h"
 #include "ast.h"
+#include "juliaastdefaultvisitor.h"
+
 #include "juliadebug.h"
 
 namespace Julia {
 
-void free_ast_recursive(CodeAst* node)
+void free_ast_recursive(TopLevelAst* node)
 {
     qCDebug(KDEV_JULIA) << "hello from CodeAst destructor";
     if (node) {
@@ -13,29 +14,26 @@ void free_ast_recursive(CodeAst* node)
     }
 }
 
-void visitStatement(StatementAst* node)
+void JuliaAstDefaultVisitor::visitBlock(BlockAst* node)
 {
-    if(!node) return;
+    if (!node) return;
+    visitNodeList(node->block);
 }
 
 void JuliaAstDefaultVisitor::visitFunctionDefinition(FunctionDefinitionAst* node)
 {
     if (!node) return;
     qCDebug(KDEV_JULIA) << ">>> JuliaAstDefaultVisitor::visitFunctionDefinition";
-    if (node->arguments) visitNode(node->arguments);
-    for (auto* stmt : node->body) {
-        if (stmt) visitNode(stmt);
-    }
+    visitNode(node->signature);
+    visitNode(node->block);
     qCDebug(KDEV_JULIA) << "<<< DONE";
 }
 
 void JuliaAstDefaultVisitor::visitAssignment(AssignmentAst* node)
 {
     if (!node) return;
-    for (auto* target : node->targets) {
-        if (target) visitNode(target);
-    }
-    if (node->value) visitNode(node->value);
+    visitNode(node->target);
+    visitNode(node->value);
 }
 
 void JuliaAstDefaultVisitor::visitReturn(ReturnAst* node)
@@ -47,52 +45,40 @@ void JuliaAstDefaultVisitor::visitReturn(ReturnAst* node)
 void JuliaAstDefaultVisitor::visitIf(IfAst* node)
 {
     if (!node) return;
-    if (node->condition) visitNode(node->condition);
-    for (auto* stmt : node->body) {
-        if (stmt) visitNode(stmt);
-    }
-    for (auto* stmt : node->orelse) {
-        if (stmt) visitNode(stmt);
-    }
+    visitNode(node->condition);
+    visitNode(node->block);
+    if (node->orelse) visitNode(node->orelse);
 }
 
 void JuliaAstDefaultVisitor::visitFor(ForAst* node)
 {
     if (!node) return;
-    if (node->target) visitNode(node->target);
-    if (node->iterator) visitNode(node->iterator);
-    for (auto* stmt : node->body) {
-        if (stmt) visitNode(stmt);
-    }
+    visitNode(node->iterator);
+    if (node->block) visitNode(node->block);
 }
 
 void JuliaAstDefaultVisitor::visitWhile(WhileAst* node)
 {
     if (!node) return;
-    if (node->condition) visitNode(node->condition);
-    for (auto* stmt : node->body) {
-        if (stmt) visitNode(stmt);
-    }
+    visitNode(node->condition);
+    visitBlock(node->block);
 }
 
 void JuliaAstDefaultVisitor::visitTry(TryAst* node)
 {
     if (!node) return;
-    for (auto* stmt : node->body) {
-        if (stmt) visitNode(stmt);
-    }
+    if (node->block) visitNode(node->block);
 }
 
 void JuliaAstDefaultVisitor::visitImport(ImportAst* node)
 {
-    // TODO: Implement
+    visitNode(node->module);
+    visitNodeList(node->names);
 }
 
 void JuliaAstDefaultVisitor::visitGlobal(GlobalAst* node)
 {
-    for (auto* ident : node->names) {
-        if (ident) visitNode(ident);
-    }
+    visitNodeList(node->names);
 }
 
 void JuliaAstDefaultVisitor::visitBreak(BreakAst* node)
@@ -106,7 +92,7 @@ void JuliaAstDefaultVisitor::visitContinue(ContinueAst* node)
 void JuliaAstDefaultVisitor::visitCall(CallAst* node)
 {
     if (!node) return;
-    if (node->function) visitNode(node->function);
+    visitNode(node->name);
     for (auto* arg : node->arguments) {
         if (arg) visitNode(arg);
     }
@@ -147,70 +133,27 @@ void JuliaAstDefaultVisitor::visitDict(DictAst* node)
     if (!node) return;
     visitNodeList(node->keys);
     visitNodeList(node->values);
-    // for (auto* key : node->keys) {
-    //     if (key) visitNode(key);
-    // }
-    // for (auto* val : node->values) {
-    //     if (val) visitNode(val);
-    // }
-}
-
-void JuliaAstDefaultVisitor::visitSubscript(SubscriptAst* node)
-{
-    if (!node) return;
-    if (node->value) visitNode(node->value);
-    if (node->slice) visitNode(node->slice);
-}
-
-void JuliaAstDefaultVisitor::visitBinaryOperation(BinaryOperationAst* node)
-{
-    if (!node) return;
-    if (node->left) visitNode(node->left);
-    if (node->right) visitNode(node->right);
-}
-
-void JuliaAstDefaultVisitor::visitUnaryOperation(UnaryOperationAst* node)
-{
-    if (!node) return;
-    if (node->operand) visitNode(node->operand);
 }
 
 void JuliaAstDefaultVisitor::visitLambda(LambdaAst* node)
 {
     if (!node) return;
     if (node->arguments) visitNode(node->arguments);
-    if (node->body) visitNode(node->body);
+    if (node->block) visitNode(node->block);
 }
 
 void JuliaAstDefaultVisitor::visitIfExpression(IfExpressionAst* node)
 {
     if (!node) return;
     if (node->condition) visitNode(node->condition);
-    if (node->body) visitNode(node->body);
+    if (node->block) visitNode(node->block);
     if (node->orelse) visitNode(node->orelse);
 }
 
-void JuliaAstDefaultVisitor::visitCode(CodeAst* node)
+void JuliaAstDefaultVisitor::visitCode(TopLevelAst* node)
 {
     if (!node) return;
-    visitNodeList(node->body);
-    // for (auto* stmt : node->body) {
-    //     if (stmt) visitNode(stmt);
-    // }
-}
-
-void JuliaAstDefaultVisitor::visitArguments(ArgumentsAst* node)
-{
-    if (!node) return;
-    for (auto* arg : node->arguments) {
-        if (arg) visitNode(arg);
-    }
-}
-
-void JuliaAstDefaultVisitor::visitKeyword(KeywordAst* node)
-{
-    if (!node) return;
-    if (node->value) visitNode(node->value);
+    visitNodeList(node->children);
 }
 
 void JuliaAstDefaultVisitor::visitIdentifier(IdentifierAst* node)
@@ -224,7 +167,7 @@ void JuliaAstDefaultVisitor::visitIdentifier(IdentifierAst* node)
 void JuliaAstDefaultVisitor::visitModule(ModuleAst* node)
 {
     if (!node) return;
-    for (auto* stmt : node->body) {
+    for (auto* stmt : node->block->block) {
         if (stmt) visitNode(stmt);
     }
 }
@@ -232,7 +175,7 @@ void JuliaAstDefaultVisitor::visitModule(ModuleAst* node)
 void JuliaAstDefaultVisitor::visitBaremodule(BaremoduleAst* node)
 {
     if (!node) return;
-    for (auto* stmt : node->body) {
+    for (auto* stmt : node->block->block) {
         if (stmt) visitNode(stmt);
     }
 }
@@ -240,9 +183,8 @@ void JuliaAstDefaultVisitor::visitBaremodule(BaremoduleAst* node)
 void JuliaAstDefaultVisitor::visitStruct(StructAst* node)
 {
     if (!node) return;
-    for (auto* stmt : node->body) {
-        if (stmt) visitNode(stmt);
-    }
+    visitNode(node->signature);
+    visitNode(node->block);
 }
 
 void JuliaAstDefaultVisitor::visitAbstract(AbstractAst* node)
@@ -256,10 +198,8 @@ void JuliaAstDefaultVisitor::visitPrimitive(PrimitiveAst* node)
 void JuliaAstDefaultVisitor::visitMacro(MacroAst* node)
 {
     if (!node) return;
-    if (node->parameters) visitNode(node->parameters);
-    for (auto* stmt : node->body) {
-        if (stmt) visitNode(stmt);
-    }
+    visitNode(node->signature);
+    visitNode(node->block);
 }
 
 void JuliaAstDefaultVisitor::visitUsing(UsingAst* node)
@@ -297,37 +237,43 @@ void JuliaAstDefaultVisitor::visitLet(LetAst* node)
 {
     if (!node) return;
     for (auto* binding : node->bindings) {
-        if (binding) visitNode(binding);
+        visitNode(binding);
     }
-    for (auto* stmt : node->body) {
-        if (stmt) visitNode(stmt);
+    for (auto* stmt : node->block) {
+        visitNode(stmt);
     }
 }
 
 void JuliaAstDefaultVisitor::visitDo(DoAst* node)
 {
     if (!node) return;
-    if (node->call) visitNode(node->call);
-    for (auto* stmt : node->body) {
-        if (stmt) visitNode(stmt);
+    visitNode(node->call);
+    for (auto* stmt : node->block) {
+        visitNode(stmt);
     }
 }
 
 // Julia-specific expressions
-
 void JuliaAstDefaultVisitor::visitParameter(ParameterAst* node)
 {
     if (!node) return;
-    if (node->name) visitNode(node->name);
-    if (node->defaultValue) visitNode(node->defaultValue);
-    if (node->annotation) visitNode(node->annotation);
+    for (auto* kw : node->kwargs) {
+        if (kw) visitNode(kw);
+    }
 }
 
 void JuliaAstDefaultVisitor::visitTypeAnnotation(TypeAnnotationAst* node)
 {
     if (!node) return;
-    if (node->value) visitNode(node->value);
-    if (node->type) visitNode(node->type);
+    visitNode(node->value);
+    visitNode(node->type);
+}
+
+void JuliaAstDefaultVisitor::visitSubtype(SubtypeAst* node)
+{
+    if (!node) return;
+    visitNode(node->left);
+    visitNode(node->right);
 }
 
 void JuliaAstDefaultVisitor::visitCurly(CurlyAst* node)
@@ -335,7 +281,7 @@ void JuliaAstDefaultVisitor::visitCurly(CurlyAst* node)
     if (!node) return;
     if (node->name) visitNode(node->name);
     for (auto* param : node->parameters) {
-        if (param) visitNode(param);
+        visitNode(param);
     }
 }
 
@@ -343,9 +289,8 @@ void JuliaAstDefaultVisitor::visitImportPath(ImportPathAst* node)
 {
     if (!node) return;
     for (auto* name : node->names) {
-        if (name) visitNode(name);
+        visitNode(name);
     }
-    if (node->asName) visitNode(node->asName);
 }
 
 void JuliaAstDefaultVisitor::visitGenerator(GeneratorAst* node)
@@ -362,40 +307,52 @@ void JuliaAstDefaultVisitor::visitInterpolatedString(InterpolatedStringAst* node
 {
     if (!node) return;
     for (auto* part : node->parts) {
-        if (part) visitNode(part);
+        visitNode(part);
     }
 }
 
 void JuliaAstDefaultVisitor::visitMacroCall(MacroCallAst* node)
 {
     if (!node) return;
-    if (node->name) visitNode(node->name);
+    visitNode(node->name);
     for (auto* arg : node->arguments) {
-        if (arg) visitNode(arg);
+        visitNode(arg);
     }
 }
 
 void JuliaAstDefaultVisitor::visitRef(RefAst* node)
 {
     if (!node) return;
-    if (node->value) visitNode(node->value);
+    visitNode(node->value);
     for (auto* idx : node->indices) {
-        if (idx) visitNode(idx);
+        visitNode(idx);
     }
 }
 
-void JuliaAstDefaultVisitor::visitKwArg(KwArgAst* node)
+void JuliaAstDefaultVisitor::visitWhere(WhereAst* node)
 {
     if (!node) return;
-    if (node->key) visitNode(node->key);
+    if (node->signature) visitNode(node->signature);
+    for (auto* c : node->constraints) {
+        if (c) visitNode(c);
+    }
+}
+
+void JuliaAstDefaultVisitor::visitStarred(StarredAst* node)
+{
+    if (!node) return;
     if (node->value) visitNode(node->value);
 }
 
-void JuliaAstDefaultVisitor::visitArg(ArgAst* node)
+void JuliaAstDefaultVisitor::visitEllipsis(EllipsisAst* node)
 {
     if (!node) return;
-    if (node->argumentName) visitNode(node->argumentName);
-    if (node->annotation) visitNode(node->annotation);
+    if (node->name) visitNode(node->name);
+}
+
+void JuliaAstDefaultVisitor::visitExpression(ExpressionAst* node)
+{
+    // ExpressionAst has no children
 }
 
 void JuliaAstDefaultVisitor::visitAlias(AliasAst* node)
@@ -405,14 +362,12 @@ void JuliaAstDefaultVisitor::visitAlias(AliasAst* node)
     if (node->asName) visitNode(node->asName);
 }
 
-void JuliaAstDefaultVisitor::visitExceptionHandler(ExceptionHandlerAst* node)
+void JuliaAstDefaultVisitor::visitCatch(CatchAst* node)
 {
     if (!node) return;
-    if (node->type) visitNode(node->type);
-    if (node->name) visitNode(node->name);
-    for (auto* stmt : node->body) {
-        if (stmt) visitNode(stmt);
-    }
+    visitNode(node->type);
+    visitNode(node->name);
+    visitNode(node->block);
 }
 
 void JuliaAstDefaultVisitor::visitComprehension(ComprehensionAst* node)
@@ -431,6 +386,26 @@ void JuliaAstDefaultVisitor::visitSlice(SliceAst* node)
     if (node->lower) visitNode(node->lower);
     if (node->upper) visitNode(node->upper);
     if (node->step) visitNode(node->step);
+}
+
+void JuliaAstDefaultVisitor::visitFilter(FilterAst* node)
+{
+    if (!node) return;
+    if (node->iterator) visitNode(node->iterator);
+    if (node->condition) visitNode(node->condition);
+}
+
+void JuliaAstDefaultVisitor::visitIn(InAst* node)
+{
+    if (!node) return;
+    if (node->target) visitNode(node->target);
+    if (node->iter) visitNode(node->iter);
+}
+
+void JuliaAstDefaultVisitor::visitIteration(IterationAst* node)
+{
+    if (!node) return;
+    visitNodeList(node->iterators);
 }
 
 }

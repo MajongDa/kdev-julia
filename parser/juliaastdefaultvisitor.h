@@ -12,7 +12,7 @@ public:
     ~JuliaAstDefaultVisitor() override = default;
 
     // Statements - core
-    void visitStatement(StatementAst * node) override;
+    void visitBlock(BlockAst * node) override;
     void visitFunctionDefinition(FunctionDefinitionAst* node) override;
     void visitAssignment(AssignmentAst* node) override;
     void visitReturn(ReturnAst* node) override;
@@ -47,33 +47,34 @@ public:
     void visitList(ListAst* node) override;
     void visitTuple(TupleAst* node) override;
     void visitDict(DictAst* node) override;
-    void visitSubscript(SubscriptAst* node) override;
-    void visitBinaryOperation(BinaryOperationAst* node) override;
-    void visitUnaryOperation(UnaryOperationAst* node) override;
     void visitLambda(LambdaAst* node) override;
     void visitIfExpression(IfExpressionAst* node) override;
 
     // Julia-specific expressions
     void visitParameter(ParameterAst* node) override;
     void visitTypeAnnotation(TypeAnnotationAst* node) override;
+    void visitSubtype(SubtypeAst* node) override;
     void visitCurly(CurlyAst* node) override;
     void visitImportPath(ImportPathAst* node) override;
     void visitGenerator(GeneratorAst* node) override;
     void visitInterpolatedString(InterpolatedStringAst* node) override;
     void visitMacroCall(MacroCallAst* node) override;
     void visitRef(RefAst* node) override;
-    void visitKwArg(KwArgAst* node) override;
 
     // Other
-    void visitCode(CodeAst* node) override;
-    void visitArguments(ArgumentsAst* node) override;
-    void visitArg(ArgAst* node) override;
-    void visitKeyword(KeywordAst* node) override;
+    void visitCode(TopLevelAst* node) override;
+    void visitWhere(WhereAst* node) override;
+    void visitStarred(StarredAst* node) override;
+    void visitEllipsis(EllipsisAst* node) override;
+    void visitExpression(ExpressionAst* node) override;
     void visitAlias(AliasAst* node) override;
-    void visitExceptionHandler(ExceptionHandlerAst* node) override;
+    void visitCatch(CatchAst* node) override;
     void visitComprehension(ComprehensionAst* node) override;
     void visitSlice(SliceAst* node) override;
     void visitIdentifier(IdentifierAst* node) override;
+    void visitFilter(FilterAst* node) override;
+    void visitIn(InAst* node) override;
+    void visitIteration(IterationAst* node) override;
 };
 
 class AstFreeVisitor : public JuliaAstDefaultVisitor
@@ -81,13 +82,34 @@ class AstFreeVisitor : public JuliaAstDefaultVisitor
 public:
     // Statements - core
     void visitFunctionDefinition(FunctionDefinitionAst* node) override {
-        JuliaAstDefaultVisitor::visitFunctionDefinition(node);
+        // Free raw signature tree first (all AST nodes that signature fields point into)
+        if (node->raw) {
+            visitNode(node->raw);
+            node->raw = nullptr;
+        }
+        // Free the FunctionSignatureAst wrapper (NOT its children, owned by raw)
+        if (node->signature) {
+            delete node->signature;
+            node->signature = nullptr;
+        }
+        // Free block
+        if (node->block) {
+            visitNode(node->block);
+            node->block = nullptr;
+        }
+        delete node;
+    }
+    void visitBlock(BlockAst* node) override {
+        JuliaAstDefaultVisitor::visitBlock(node);
         delete node;
     }
     void visitAssignment(AssignmentAst* node) override {
         JuliaAstDefaultVisitor::visitAssignment(node);
         delete node;
     }
+    /* void visitCompoundAssignment(CompoundAssignmentAst * node) override;
+     * currently dispatches through visitAssignment. Memory leak?
+     */
     void visitReturn(ReturnAst* node) override {
         JuliaAstDefaultVisitor::visitReturn(node);
         delete node;
@@ -202,24 +224,24 @@ public:
         JuliaAstDefaultVisitor::visitDict(node);
         delete node;
     }
-    void visitSubscript(SubscriptAst* node) override {
-        JuliaAstDefaultVisitor::visitSubscript(node);
-        delete node;
-    }
-    void visitBinaryOperation(BinaryOperationAst* node) override {
-        JuliaAstDefaultVisitor::visitBinaryOperation(node);
-        delete node;
-    }
-    void visitUnaryOperation(UnaryOperationAst* node) override {
-        JuliaAstDefaultVisitor::visitUnaryOperation(node);
-        delete node;
-    }
     void visitLambda(LambdaAst* node) override {
         JuliaAstDefaultVisitor::visitLambda(node);
         delete node;
     }
     void visitIfExpression(IfExpressionAst* node) override {
         JuliaAstDefaultVisitor::visitIfExpression(node);
+        delete node;
+    }
+    void visitExpression(ExpressionAst* node) override {
+        JuliaAstDefaultVisitor::visitExpression(node);
+        delete node;
+    }
+    void visitStarred(StarredAst* node) override {
+        JuliaAstDefaultVisitor::visitStarred(node);
+        delete node;
+    }
+    void visitEllipsis(EllipsisAst* node) override {
+        JuliaAstDefaultVisitor::visitEllipsis(node);
         delete node;
     }
     // Julia-specific expressions
@@ -229,6 +251,10 @@ public:
     }
     void visitTypeAnnotation(TypeAnnotationAst* node) override {
         JuliaAstDefaultVisitor::visitTypeAnnotation(node);
+        delete node;
+    }
+    void visitSubtype(SubtypeAst* node) override {
+        JuliaAstDefaultVisitor::visitSubtype(node);
         delete node;
     }
     void visitCurly(CurlyAst* node) override {
@@ -255,33 +281,21 @@ public:
         JuliaAstDefaultVisitor::visitRef(node);
         delete node;
     }
-    void visitKwArg(KwArgAst* node) override {
-        JuliaAstDefaultVisitor::visitKwArg(node);
+    void visitWhere(WhereAst* node) override {
+        JuliaAstDefaultVisitor::visitWhere(node);
         delete node;
     }
     // Other
     // The CodeAst should not free itself, as this is supposed to be called from ~CodeAst.
-    void visitCode(CodeAst* node) override {
+    void visitCode(TopLevelAst* node) override {
         JuliaAstDefaultVisitor::visitCode(node);
-    }
-    void visitArguments(ArgumentsAst* node) override {
-        JuliaAstDefaultVisitor::visitArguments(node);
-        delete node;
-    }
-    void visitArg(ArgAst* node) override {
-        JuliaAstDefaultVisitor::visitArg(node);
-        delete node;
-    }
-    void visitKeyword(KeywordAst* node) override {
-        JuliaAstDefaultVisitor::visitKeyword(node);
-        delete node;
     }
     void visitAlias(AliasAst* node) override {
         JuliaAstDefaultVisitor::visitAlias(node);
         delete node;
     }
-    void visitExceptionHandler(ExceptionHandlerAst* node) override {
-        JuliaAstDefaultVisitor::visitExceptionHandler(node);
+    void visitCatch(CatchAst* node) override {
+        JuliaAstDefaultVisitor::visitCatch(node);
         delete node;
     }
     void visitComprehension(ComprehensionAst* node) override {
@@ -296,9 +310,21 @@ public:
         JuliaAstDefaultVisitor::visitIdentifier(node);
         delete node;
     }
+    void visitFilter(FilterAst* node) override {
+        JuliaAstDefaultVisitor::visitFilter(node);
+        delete node;
+    }
+    void visitIn(InAst* node) override {
+        JuliaAstDefaultVisitor::visitIn(node);
+        delete node;
+    }
+    void visitIteration(IterationAst* node) override {
+        JuliaAstDefaultVisitor::visitIteration(node);
+        delete node;
+    }
 };
 
-void free_ast_recursive(CodeAst* node);
+void free_ast_recursive(TopLevelAst* node);
 }
 
 #endif

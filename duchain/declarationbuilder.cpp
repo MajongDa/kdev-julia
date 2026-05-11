@@ -18,6 +18,8 @@
 
 namespace Julia {
 
+static IdentifierAst* extractNameFromSignature(Ast* sig);
+
 DeclarationBuilder::DeclarationBuilder(JuliaEditorIntegrator* editor)
     : m_editor(editor)
 {
@@ -114,18 +116,18 @@ void DeclarationBuilder::visitNode(Ast* node)
 
 void DeclarationBuilder::visitFunctionDefinition(FunctionDefinitionAst* node)
 {
-    if (!node || !node->name) return;
+    auto* sig = node->signature;
+    if (!sig || !sig->name) return;
     
-    qCDebug(KDEV_JULIA) << "DeclarationBuilder::visitFunctionDefinition:" << node->name->value;
+    qCDebug(KDEV_JULIA) << "DeclarationBuilder::visitFunctionDefinition:" << sig->name->value;
     
     KDevelop::FunctionType::Ptr funcType(new KDevelop::FunctionType());
     
-    KDevelop::QualifiedIdentifier ident(node->name->value);
-    KDevelop::RangeInRevision range = editorFindRange(node->name, node->name);
+    KDevelop::QualifiedIdentifier ident(sig->name->value);
+    KDevelop::RangeInRevision range = editorFindRange(sig->name, sig->name);
     
     {
-        KDevelop::DUChainWriteLocker lock;
-        // Use FunctionDeclaration instead of generic Declaration
+        KDevelop::DUChainWriteLocker lock(KDevelop::DUChain::lock());
         KDevelop::FunctionDeclaration* funcDecl = DeclarationBuilderBase::openDeclaration<KDevelop::FunctionDeclaration>(ident, range);
         funcDecl->setType(funcType);
         funcDecl->setInSymbolTable(true);
@@ -133,96 +135,172 @@ void DeclarationBuilder::visitFunctionDefinition(FunctionDefinitionAst* node)
     
     openType(funcType);
     
-    // Process return type annotation FIRST (so it's available for type inference)
-    if (node->returns) {
+    // Process return type annotation
+    if (sig->returnType) {
         ExpressionVisitor exprVisitor(currentContext());
-        exprVisitor.visitNode(node->returns);
+        exprVisitor.visitNode(sig->returnType);
         KDevelop::AbstractType::Ptr returnType = exprVisitor.lastType();
         if (returnType) {
-            KDevelop::DUChainWriteLocker lock;
+            KDevelop::DUChainWriteLocker lock(KDevelop::DUChain::lock());
             funcType->setReturnType(returnType);
         }
     }
     
-    // Visit arguments to create parameter declarations AND add to FunctionType
-    if (node->arguments) {
-        visitArguments(static_cast<ArgumentsAst*>(node->arguments));
+    // Create parameter declarations from positional args
+    for (auto* arg : sig->positionalArgs) {
+        processParameter(arg, funcType);
+    }
+    
+    // Create parameter declarations from keyword args
+    for (auto* kw : sig->keywordArgs) {
+        if (kw->astType == AstType::ParameterAstType) {
+            auto* params = static_cast<ParameterAst*>(kw);
+            for (auto* kwarg : params->kwargs) {
+                processParameter(kwarg, funcType);
+            }
+        }
     }
     
     closeType();
+
+    // Create function body context and store on node->block so the
+    // use phase can reuse it (otherwise openContext pushes nullptr -> crash)
+    if (node->block && !node->block->block.isEmpty()) {
+        ContextBuilder::visitFunctionBody(node);
+    }
+
     DeclarationBuilderBase::closeDeclaration();
+}
+
+void DeclarationBuilder::processParameter(Ast* arg, KDevelop::FunctionType::Ptr funcType)
+{
+    if (!arg) return;
+    
+    QString paramName;
+    KDevelop::AbstractType::Ptr paramType;
+    Ast* inner = arg;
+    
+    // Unwrap EllipsisAst (varargs: x...)
+    if (inner->astType == AstType::EllipsisAstType) {
+        inner = static_cast<EllipsisAst*>(inner)->name;
+        if (!inner) return;
+    }
+    
+    // Unwrap TypeAnnotationAst (x::T or x::T=1)
+    if (inner->astType == AstType::TypeAnnotationAstType) {
+        auto* typeAnn = static_cast<TypeAnnotationAst*>(inner);
+        if (typeAnn->type) {
+            ExpressionVisitor exprVisitor(currentContext());
+            exprVisitor.visitNode(typeAnn->type);
+            paramType = exprVisitor.lastType();
+        }
+        inner = typeAnn->value;
+    }
+    
+    // Unwrap AssignmentAst (x=1 or x::T=1)
+    if (inner && inner->astType == AstType::AssignmentAstType) {
+        auto* assign = static_cast<AssignmentAst*>(inner);
+        if (!paramType && assign->value) {
+            ExpressionVisitor exprVisitor(currentContext());
+            exprVisitor.visitNode(assign->value);
+            paramType = exprVisitor.lastType();
+        }
+        inner = assign->target;
+    }
+    
+    // Extract parameter name
+    if (inner && inner->astType == AstType::IdentifierAstType) {
+        paramName = static_cast<IdentifierAst*>(inner)->value;
+    }
+    
+    if (paramName.isEmpty()) return;
+    
+    // Fallback type
+    if (!paramType) {
+        paramType = KDevelop::AbstractType::Ptr(new KDevelop::IntegralType(KDevelop::IntegralType::TypeMixed));
+    }
+    
+    // Add to FunctionType
+    funcType->addArgument(paramType);
+    
+    // Create declaration
+    KDevelop::QualifiedIdentifier qident(paramName);
+    KDevelop::RangeInRevision range = editorFindRange(inner, inner);
+    
+    {
+        KDevelop::DUChainWriteLocker lock;
+        KDevelop::Declaration* decl = DeclarationBuilderBase::openDeclaration<KDevelop::Declaration>(qident, range);
+        decl->setKind(KDevelop::Declaration::Instance);
+        decl->setInSymbolTable(true);
+        decl->setType(paramType);
+        DeclarationBuilderBase::closeDeclaration();
+    }
 }
 
 void DeclarationBuilder::visitAssignment(AssignmentAst* node)
 {
-    if (!node) return;
+    if (!node || !node->target) return;
     
-    for (auto* target : node->targets) {
-        if (!target) continue;
-        
-        // Handle simple identifier assignment
-        if (target->astType == AstType::IdentifierAstType) {
-            IdentifierAst* nameAst = static_cast<IdentifierAst*>(target);
-            if (!nameAst || nameAst->context != ExpressionAst::Context::Store) {
-                continue;
-            }
-            
-            IdentifierAst* ident = nameAst;
-            KDevelop::QualifiedIdentifier qident(ident->value);
-            KDevelop::RangeInRevision range = editorFindRange(ident, ident);
-            
-            KDevelop::DUChainWriteLocker lock;
-            KDevelop::Declaration* decl = DeclarationBuilderBase::openDeclaration<KDevelop::Declaration>(qident, range);
-            decl->setKind(KDevelop::Declaration::Instance);
-            decl->setInSymbolTable(true);
-            
-            // If there's a value, try to infer type
-            if (node->value) {
-                lock.unlock();
-                ExpressionVisitor exprVisitor(currentContext());
-                exprVisitor.visitNode(node->value);
-                KDevelop::AbstractType::Ptr type = exprVisitor.lastType();
-                if (type) {
-                    lock.lock();
-                    decl->setType(type);
-                }
-                lock.unlock();
-            } else {
-                lock.unlock();
-            }
-            
-            DeclarationBuilderBase::closeDeclaration();
+    // Handle simple identifier assignment
+    if (node->target->astType == AstType::IdentifierAstType) {
+        IdentifierAst* ident = static_cast<IdentifierAst*>(node->target);
+        if (!ident || ident->context != ExpressionAst::Context::Store) {
+            return;
         }
-        // Handle type annotation: x::T
-        else if (target->astType == AstType::TypeAnnotationAstType) {
-            TypeAnnotationAst* typeAnn = static_cast<TypeAnnotationAst*>(target);
-            if (typeAnn->value && typeAnn->value->astType == AstType::IdentifierAstType) {
-                IdentifierAst* ident = static_cast<IdentifierAst*>(typeAnn->value);
-                if (ident) {
-                    KDevelop::QualifiedIdentifier qident(ident->value);
-                    KDevelop::RangeInRevision range = editorFindRange(ident, ident);
-                    
-                    KDevelop::DUChainWriteLocker lock;
-                    KDevelop::Declaration* decl = DeclarationBuilderBase::openDeclaration<KDevelop::Declaration>(qident, range);
-                    decl->setKind(KDevelop::Declaration::Instance);
-                    decl->setInSymbolTable(true);
-                    
-                    if (typeAnn->type) {
-                        lock.unlock();
-                        ExpressionVisitor exprVisitor(currentContext());
-                        exprVisitor.visitNode(typeAnn->type);
-                        KDevelop::AbstractType::Ptr type = exprVisitor.lastType();
-                        if (type) {
-                            lock.lock();
-                            decl->setType(type);
-                        }
-                        lock.unlock();
-                    } else {
-                        lock.unlock();
+        
+        KDevelop::QualifiedIdentifier qident(ident->value);
+        KDevelop::RangeInRevision range = editorFindRange(ident, ident);
+        
+        KDevelop::DUChainWriteLocker lock;
+        KDevelop::Declaration* decl = DeclarationBuilderBase::openDeclaration<KDevelop::Declaration>(qident, range);
+        decl->setKind(KDevelop::Declaration::Instance);
+        decl->setInSymbolTable(true);
+        
+        if (node->value) {
+            lock.unlock();
+            ExpressionVisitor exprVisitor(currentContext());
+            exprVisitor.visitNode(node->value);
+            KDevelop::AbstractType::Ptr type = exprVisitor.lastType();
+            if (type) {
+                lock.lock();
+                decl->setType(type);
+            }
+            lock.unlock();
+        } else {
+            lock.unlock();
+        }
+        
+        DeclarationBuilderBase::closeDeclaration();
+    }
+    // Handle type annotation: x::T
+    else if (node->target->astType == AstType::TypeAnnotationAstType) {
+        TypeAnnotationAst* typeAnn = static_cast<TypeAnnotationAst*>(node->target);
+        if (typeAnn->value && typeAnn->value->astType == AstType::IdentifierAstType) {
+            IdentifierAst* ident = static_cast<IdentifierAst*>(typeAnn->value);
+            if (ident) {
+                KDevelop::QualifiedIdentifier qident(ident->value);
+                KDevelop::RangeInRevision range = editorFindRange(ident, ident);
+                
+                KDevelop::DUChainWriteLocker lock;
+                KDevelop::Declaration* decl = DeclarationBuilderBase::openDeclaration<KDevelop::Declaration>(qident, range);
+                decl->setKind(KDevelop::Declaration::Instance);
+                decl->setInSymbolTable(true);
+                
+                if (typeAnn->type) {
+                    lock.unlock();
+                    ExpressionVisitor exprVisitor(currentContext());
+                    exprVisitor.visitNode(typeAnn->type);
+                    KDevelop::AbstractType::Ptr type = exprVisitor.lastType();
+                    if (type) {
+                        lock.lock();
+                        decl->setType(type);
                     }
-                    
-                    DeclarationBuilderBase::closeDeclaration();
+                    lock.unlock();
+                } else {
+                    lock.unlock();
                 }
+                
+                DeclarationBuilderBase::closeDeclaration();
             }
         }
     }
@@ -252,20 +330,24 @@ void DeclarationBuilder::visitImport(ImportAst* node)
 
 void DeclarationBuilder::visitFor(ForAst* node)
 {
-    if (!node || !node->target) return;
+    if (!node || !node->iterator) return;
     
-    // Handle loop variable declaration
-    if (node->target->astType == AstType::IdentifierAstType) {
-        IdentifierAst* ident = static_cast<IdentifierAst*>(node->target);
-        if (ident) {
-            KDevelop::QualifiedIdentifier qident(ident->value);
-            KDevelop::RangeInRevision range = editorFindRange(ident, ident);
-            
-            KDevelop::DUChainWriteLocker lock;
-            KDevelop::Declaration* decl = DeclarationBuilderBase::openDeclaration<KDevelop::Declaration>(qident, range);
-            decl->setKind(KDevelop::Declaration::Instance);
-            decl->setInSymbolTable(true);
-            DeclarationBuilderBase::closeDeclaration();
+    // Handle loop variable declaration — unwrap InAst -> target
+    Ast* iter = node->iterator;
+    if (iter->astType == AstType::InAstType) {
+        auto* inNode = static_cast<InAst*>(iter);
+        if (inNode->target && inNode->target->astType == AstType::IdentifierAstType) {
+            IdentifierAst* ident = static_cast<IdentifierAst*>(inNode->target);
+            if (ident) {
+                KDevelop::QualifiedIdentifier qident(ident->value);
+                KDevelop::RangeInRevision range = editorFindRange(ident, ident);
+                
+                KDevelop::DUChainWriteLocker lock;
+                KDevelop::Declaration* decl = DeclarationBuilderBase::openDeclaration<KDevelop::Declaration>(qident, range);
+                decl->setKind(KDevelop::Declaration::Instance);
+                decl->setInSymbolTable(true);
+                DeclarationBuilderBase::closeDeclaration();
+            }
         }
     }
 }
@@ -279,8 +361,9 @@ void DeclarationBuilder::visitGlobal(GlobalAst* node)
 {
     if (!node) return;
     
-    for (auto* ident : node->names) {
-        if (!ident) continue;
+    for (auto* name : node->names) {
+        if (!name || name->astType != AstType::IdentifierAstType) continue;
+        IdentifierAst* ident = static_cast<IdentifierAst*>(name);
         
         KDevelop::QualifiedIdentifier qident(ident->value);
         KDevelop::RangeInRevision range = editorFindRange(ident, ident);
@@ -323,6 +406,8 @@ void DeclarationBuilder::visitModule(ModuleAst* node)
     decl->setKind(KDevelop::Declaration::Namespace);
     decl->setInSymbolTable(true);
     DeclarationBuilderBase::closeDeclaration();
+
+    ContextBuilder::visitModule(node);
 }
 
 void DeclarationBuilder::visitBaremodule(BaremoduleAst* node)
@@ -337,16 +422,21 @@ void DeclarationBuilder::visitBaremodule(BaremoduleAst* node)
     decl->setKind(KDevelop::Declaration::Namespace);
     decl->setInSymbolTable(true);
     DeclarationBuilderBase::closeDeclaration();
+
+    ContextBuilder::visitBaremodule(node);
 }
 
 void DeclarationBuilder::visitStruct(StructAst* node)
 {
-    if (!node || !node->name) return;
+    if (!node || !node->signature) return;
+    
+    IdentifierAst* nameIdent = extractNameFromSignature(node->signature);
+    if (!nameIdent) return;
     
     KDevelop::StructureType::Ptr structType(new KDevelop::StructureType());
     
-    KDevelop::QualifiedIdentifier qident(node->name->value);
-    KDevelop::RangeInRevision range = editorFindRange(node->name, node->name);
+    KDevelop::QualifiedIdentifier qident(nameIdent->value);
+    KDevelop::RangeInRevision range = editorFindRange(nameIdent, nameIdent);
     
     KDevelop::DUChainWriteLocker lock;
     KDevelop::Declaration* decl = DeclarationBuilderBase::openDeclaration<KDevelop::Declaration>(qident, range);
@@ -354,22 +444,19 @@ void DeclarationBuilder::visitStruct(StructAst* node)
     decl->setInSymbolTable(true);
     decl->setType(structType);
     DeclarationBuilderBase::closeDeclaration();
-    
-    // Handle field declarations in body
-    for (auto* stmt : node->body) {
-        if (!stmt) continue;
-        if (stmt->astType == AstType::AssignmentAstType) {
-            visitNode(stmt);
-        }
-    }
+
+    ContextBuilder::visitStruct(node);
 }
 
 void DeclarationBuilder::visitAbstract(AbstractAst* node)
 {
-    if (!node || !node->name) return;
+    if (!node || !node->signature) return;
     
-    KDevelop::QualifiedIdentifier qident(node->name->value);
-    KDevelop::RangeInRevision range = editorFindRange(node->name, node->name);
+    IdentifierAst* nameIdent = extractNameFromSignature(node->signature);
+    if (!nameIdent) return;
+    
+    KDevelop::QualifiedIdentifier qident(nameIdent->value);
+    KDevelop::RangeInRevision range = editorFindRange(nameIdent, nameIdent);
     
     KDevelop::DUChainWriteLocker lock;
     KDevelop::Declaration* decl = DeclarationBuilderBase::openDeclaration<KDevelop::Declaration>(qident, range);
@@ -380,10 +467,13 @@ void DeclarationBuilder::visitAbstract(AbstractAst* node)
 
 void DeclarationBuilder::visitPrimitive(PrimitiveAst* node)
 {
-    if (!node || !node->name) return;
+    if (!node || !node->signature) return;
     
-    KDevelop::QualifiedIdentifier qident(node->name->value);
-    KDevelop::RangeInRevision range = editorFindRange(node->name, node->name);
+    IdentifierAst* nameIdent = extractNameFromSignature(node->signature);
+    if (!nameIdent) return;
+    
+    KDevelop::QualifiedIdentifier qident(nameIdent->value);
+    KDevelop::RangeInRevision range = editorFindRange(nameIdent, nameIdent);
     
     KDevelop::DUChainWriteLocker lock;
     KDevelop::Declaration* decl = DeclarationBuilderBase::openDeclaration<KDevelop::Declaration>(qident, range);
@@ -394,16 +484,21 @@ void DeclarationBuilder::visitPrimitive(PrimitiveAst* node)
 
 void DeclarationBuilder::visitMacro(MacroAst* node)
 {
-    if (!node || !node->name) return;
+    if (!node || !node->signature) return;
     
-    KDevelop::QualifiedIdentifier qident(node->name->value);
-    KDevelop::RangeInRevision range = editorFindRange(node->name, node->name);
+    IdentifierAst* nameIdent = extractNameFromSignature(node->signature);
+    if (!nameIdent) return;
+    
+    KDevelop::QualifiedIdentifier qident(nameIdent->value);
+    KDevelop::RangeInRevision range = editorFindRange(nameIdent, nameIdent);
     
     KDevelop::DUChainWriteLocker lock;
     KDevelop::Declaration* decl = DeclarationBuilderBase::openDeclaration<KDevelop::Declaration>(qident, range);
     decl->setKind(KDevelop::Declaration::Instance);
     decl->setInSymbolTable(true);
     DeclarationBuilderBase::closeDeclaration();
+
+    ContextBuilder::visitMacro(node);
 }
 
 void DeclarationBuilder::visitConst(ConstAst* node)
@@ -440,127 +535,23 @@ void DeclarationBuilder::visitConst(ConstAst* node)
     }
 }
 
-void DeclarationBuilder::visitArguments(ArgumentsAst* node)
+static IdentifierAst* extractNameFromSignature(Ast* sig)
 {
-    if (!node) return;
-    
-    qCDebug(KDEV_JULIA) << "DeclarationBuilder::visitArguments";
-    
-    // Get the FunctionType we're building
-    KDevelop::FunctionType::Ptr funcType = currentType<KDevelop::FunctionType>();
-    if (!funcType) {
-        qCDebug(KDEV_JULIA) << "No FunctionType available for arguments";
+    if (!sig) return nullptr;
+    Ast* inner = sig;
+    while (inner) {
+        if (inner->astType == AstType::IdentifierAstType)
+            return static_cast<IdentifierAst*>(inner);
+        if (inner->astType == AstType::CallAstType)
+            inner = static_cast<CallAst*>(inner)->name;
+        else if (inner->astType == AstType::CurlyAstType)
+            inner = static_cast<CurlyAst*>(inner)->name;
+        else if (inner->astType == AstType::WhereAstType)
+            inner = static_cast<WhereAst*>(inner)->signature;
+        else
+            break;
     }
-    
-    // Default values are already in order matching positional arguments
-    // No calculation needed - just iterate in natural order
-    int defaultIndex = 0;
-    
-    // Process positional-only arguments
-    for (auto* arg : node->posonlyargs) {
-        if (arg && arg->astType == AstType::ArgAstType) {
-            processArg(static_cast<ArgAst*>(arg), funcType, defaultIndex, node);
-            defaultIndex++;
-        }
-    }
-    
-    // Process regular positional arguments
-    for (auto* arg : node->arguments) {
-        if (arg && arg->astType == AstType::ArgAstType) {
-            processArg(static_cast<ArgAst*>(arg), funcType, defaultIndex, node);
-            defaultIndex++;
-        }
-    }
-    
-    // Process keyword-only arguments (no default values in defaultValues list)
-    for (auto* arg : node->kwonlyargs) {
-        if (arg && arg->astType == AstType::ArgAstType) {
-            processArg(static_cast<ArgAst*>(arg), funcType, -1, node);
-        }
-    }
-    
-    // Process *args (vararg)
-    if (node->vararg && node->vararg->astType == AstType::ArgAstType) {
-        KDevelop::IntegralType::Ptr varargType(new KDevelop::IntegralType(KDevelop::IntegralType::TypeMixed));
-        
-        if (funcType) {
-            funcType->addArgument(KDevelop::AbstractType::Ptr(varargType));
-        }
-        
-        processArg(static_cast<ArgAst*>(node->vararg), funcType, -1, node);
-    }
-    
-    // Process **kwargs (kwarg)
-    if (node->kwarg && node->kwarg->astType == AstType::ArgAstType) {
-        KDevelop::IntegralType::Ptr kwargType(new KDevelop::IntegralType(KDevelop::IntegralType::TypeMixed));
-        
-        if (funcType) {
-            funcType->addArgument(KDevelop::AbstractType::Ptr(kwargType));
-        }
-        
-        processArg(static_cast<ArgAst*>(node->kwarg), funcType, -1, node);
-    }
-}
-
-void DeclarationBuilder::processArg(ArgAst* node, KDevelop::FunctionType::Ptr funcType, 
-                                   int defaultValueIndex, ArgumentsAst* parentArgs)
-{
-    if (!node || !node->argumentName) return;
-    
-    qCDebug(KDEV_JULIA) << "DeclarationBuilder::processArg:" << node->argumentName->value;
-    
-    KDevelop::QualifiedIdentifier ident(node->argumentName->value);
-    KDevelop::RangeInRevision range = editorFindRange(node->argumentName, node->argumentName);
-    
-    KDevelop::AbstractType::Ptr argumentType;
-    
-    // Process type annotation if present
-    if (node->annotation) {
-        ExpressionVisitor exprVisitor(currentContext());
-        exprVisitor.visitNode(node->annotation);
-        argumentType = exprVisitor.lastType();
-    }
-    
-    // If no annotation, try to get type from default value (direct index into defaultValues)
-    if (!argumentType && defaultValueIndex >= 0 && defaultValueIndex < parentArgs->defaultValues.size()) {
-        Ast* defaultValue = parentArgs->defaultValues.at(defaultValueIndex);
-        if (defaultValue) {
-            ExpressionVisitor exprVisitor(currentContext());
-            exprVisitor.visitNode(defaultValue);
-            argumentType = exprVisitor.lastType();
-        }
-    }
-    
-    // If still no type, use a generic type
-    if (!argumentType) {
-        argumentType = KDevelop::AbstractType::Ptr(new KDevelop::IntegralType(KDevelop::IntegralType::TypeMixed));
-    }
-    
-    // Add argument type to FunctionType
-    if (funcType) {
-        funcType->addArgument(argumentType);
-    }
-    
-    // Create the parameter declaration with the determined type
-    {
-        KDevelop::DUChainWriteLocker lock;
-        KDevelop::Declaration* paramDecl = DeclarationBuilderBase::openDeclaration<KDevelop::Declaration>(ident, range);
-        paramDecl->setKind(KDevelop::Declaration::Instance);
-        paramDecl->setInSymbolTable(true);
-        paramDecl->setType(argumentType);
-        
-        DeclarationBuilderBase::closeDeclaration();
-    }
-}
-
-void DeclarationBuilder::visitCode(CodeAst* node)
-{
-    if (!node) return;
-    
-    // Visit all statements in the code block
-    for (auto* stmt : node->body) {
-        if (stmt) visitNode(stmt);
-    }
+    return nullptr;
 }
 
 }

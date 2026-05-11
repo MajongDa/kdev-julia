@@ -10,14 +10,10 @@
 
 namespace Julia {
 
-class Ast;
-class IdentifierAst;
-class CodeAst;
-
 class AstTransformer
 {
 public:
-    CodeAst* parse(const QByteArray& json);
+    TopLevelAst* parse(const QByteArray& json);
 
 private:
     Ast* fromJson(const QJsonObject& json, Ast* parent = nullptr);
@@ -30,7 +26,7 @@ private:
     // Helper functions for proper argument categorization
     void processPositionalArguments(FunctionDefinitionAst* fn, const QJsonObject& callObj, Ast* parent);
     void processKeywordArguments(FunctionDefinitionAst* fn, const QJsonObject& paramsObj, Ast* parent);
-    ArgAst* createArgFromCallChild(const QJsonObject& childObj, Ast* parent);
+    FunctionSignatureAst* parseFunctionSignature(Ast* rawNode, Ast* parent);
 };
 
 } // namespace Julia

@@ -48,8 +48,9 @@ void ContextBuilder::startVisiting(Ast* node)
         return;
     }
     qCDebug(KDEV_JULIA) << ">>> ContextBuilder::startVisiting:" << node->dump();
+    qCDebug(KDEV_JULIA) << "  ContextBuilder: currentContext before visitNode:" << currentContext();
     visitNode(node);
-    qCDebug(KDEV_JULIA) << "<<< ContextBuilder::startVisiting DONE";
+    qCDebug(KDEV_JULIA) << "<<< ContextBuilder::startVisiting DONE, currentContext:" << currentContext();
 }
 
 KDevelop::DUContext* ContextBuilder::contextFromNode(Ast* node)
@@ -96,82 +97,62 @@ void ContextBuilder::visitFunctionDefinition(FunctionDefinitionAst* node)
 {
     if (!node) return;
     
-    qCDebug(KDEV_JULIA) << "ContextBuilder::visitFunctionDefinition:" << (node->name ? node->name->value : QStringLiteral("unknown"));
-    
-    // First, process function arguments - creates DUContext of type Function
-    if (node->arguments) {
-        visitFunctionArguments(node);
-    }
-    
+    auto* sig = node->signature;
+    qCDebug(KDEV_JULIA) << "ContextBuilder::visitFunctionDefinition:" << (sig ? sig->dump() : QStringLiteral("unknown"));
+
+    if (!sig || !sig->rawSignature) return;
+
+    // Visit rawSignature to process default value expressions for use tracking
+    // No openContext/closeContext here — parameter context was never stored on
+    // rawSignature during declaration phase (DeclarationBuilder overrides the base),
+    // so opening one during use phase would push nullptr and crash.
+    visitNode(sig->rawSignature);
+
     // Second, process function body - creates DUContext of type Other
-    if (!node->body.isEmpty()) {
+    if (node->block && !node->block->block.isEmpty()) {
         visitFunctionBody(node);
     }
 }
 
-void ContextBuilder::visitFunctionArguments(FunctionDefinitionAst* node)
+void ContextBuilder::visitCall(CallAst* node)
 {
-    if (!node || !node->arguments) return;
-    
-    qCDebug(KDEV_JULIA) << "ContextBuilder::visitFunctionArguments";
-    
-    // Calculate range for arguments context
-    ArgumentsAst* args = node->arguments;
-    KDevelop::RangeInRevision range = args->range();
-    
-    // Open context of type Function for parameters
-    KDevelop::QualifiedIdentifier funcIdent;
-    if (node->name) {
-        funcIdent = KDevelop::QualifiedIdentifier(node->name->value);
+    if (!node) return;
+    if (node->name) visitNode(node->name);
+    for (auto* arg : node->arguments) {
+        if (arg) visitNode(arg);
     }
-    
-    openContext(args, range, KDevelop::DUContext::Function, funcIdent);
-    
-    // Visit argument nodes to create declarations for parameters
-    visitNode(args);
-    
-    // Close the arguments context
-    closeContext();
 }
 
 void ContextBuilder::visitFunctionBody(FunctionDefinitionAst* node)
 {
-    if (!node || node->body.isEmpty()) return;
+    if (!node || !node->block) return;
     
     qCDebug(KDEV_JULIA) << "ContextBuilder::visitFunctionBody";
     
-    // Calculate range for body context
-    Ast* firstBody = node->body.first();
-    Ast* lastBody = node->body.last();
-    KDevelop::RangeInRevision bodyRange(firstBody->startLine, firstBody->startCol, 
+    auto* sig = node->signature;
+    KDevelop::QualifiedIdentifier funcIdent;
+    if (sig && sig->name) {
+        funcIdent = KDevelop::QualifiedIdentifier(sig->name->value);
+    }
+    
+    auto& body = node->block->block;
+    if (body.isEmpty()) return;
+    
+    Ast* firstBody = body.first();
+    Ast* lastBody = body.last();
+    KDevelop::RangeInRevision bodyRange(firstBody->startLine, firstBody->startCol,
                                           lastBody->endLine, lastBody->endCol);
     
-    // Open context of type Other for function body
-    KDevelop::QualifiedIdentifier funcIdent;
-    if (node->name) {
-        funcIdent = KDevelop::QualifiedIdentifier(node->name->value);
-    }
-    
-    openContext(node, bodyRange, KDevelop::DUContext::Other, funcIdent);
-    
-    // Import parent context (argument context) into body scope
-    // This makes parameter names visible in the function body
+    openContext(node->block, bodyRange, KDevelop::DUContext::Other, funcIdent);
     addImportedContexts();
-    
-    // Visit all statements in the body
-    for (auto* stmt : node->body) {
-        if (stmt) visitNode(stmt);
-    }
-    
+    JuliaAstDefaultVisitor::visitFunctionDefinition(node);
     closeContext();
 }
 
 void ContextBuilder::visitAssignment(AssignmentAst* node)
 {
     if (!node) return;
-    for (auto* target : node->targets) {
-        if (target) visitNode(target);
-    }
+    if (node->target) visitNode(node->target);
     if (node->value) visitNode(node->value);
 }
 
@@ -179,21 +160,22 @@ void ContextBuilder::visitIf(IfAst* node)
 {
     if (!node) return;
     if (node->condition) visitNode(node->condition);
-    for (auto* stmt : node->body) {
-        if (stmt) visitNode(stmt);
+    if (node->block) {
+        for (auto* stmt : node->block->block) {
+            if (stmt) visitNode(stmt);
+        }
     }
-    for (auto* stmt : node->orelse) {
-        if (stmt) visitNode(stmt);
-    }
+    if (node->orelse) visitNode(node->orelse);
 }
 
 void ContextBuilder::visitFor(ForAst* node)
 {
     if (!node) return;
-    if (node->target) visitNode(node->target);
     if (node->iterator) visitNode(node->iterator);
-    for (auto* stmt : node->body) {
-        if (stmt) visitNode(stmt);
+    if (node->block) {
+        for (auto* stmt : node->block->block) {
+            if (stmt) visitNode(stmt);
+        }
     }
 }
 
@@ -201,16 +183,20 @@ void ContextBuilder::visitWhile(WhileAst* node)
 {
     if (!node) return;
     if (node->condition) visitNode(node->condition);
-    for (auto* stmt : node->body) {
-        if (stmt) visitNode(stmt);
+    if (node->block) {
+        for (auto* stmt : node->block->block) {
+            if (stmt) visitNode(stmt);
+        }
     }
 }
 
 void ContextBuilder::visitTry(TryAst* node)
 {
     if (!node) return;
-    for (auto* stmt : node->body) {
-        if (stmt) visitNode(stmt);
+    if (node->block) {
+        for (auto* stmt : node->block->block) {
+            if (stmt) visitNode(stmt);
+        }
     }
 }
 
@@ -230,14 +216,14 @@ void ContextBuilder::visitModule(ModuleAst* node)
         moduleName = KDevelop::QualifiedIdentifier(node->name->value);
     }
     
-    if (!node->body.isEmpty()) {
-        Ast* firstBody = node->body.first();
-        Ast* lastBody = node->body.last();
+    if (node->block && !node->block->block.isEmpty()) {
+        Ast* firstBody = node->block->block.first();
+        Ast* lastBody = node->block->block.last();
         KDevelop::RangeInRevision bodyRange(firstBody->startLine, firstBody->startCol, 
                                             lastBody->endLine, lastBody->endCol);
         openContext(node, bodyRange, KDevelop::DUContext::Namespace, moduleName);
         
-        for (auto* stmt : node->body) {
+        for (auto* stmt : node->block->block) {
             if (stmt) visitNode(stmt);
         }
         
@@ -254,14 +240,14 @@ void ContextBuilder::visitBaremodule(BaremoduleAst* node)
         moduleName = KDevelop::QualifiedIdentifier(node->name->value);
     }
     
-    if (!node->body.isEmpty()) {
-        Ast* firstBody = node->body.first();
-        Ast* lastBody = node->body.last();
+    if (node->block && !node->block->block.isEmpty()) {
+        Ast* firstBody = node->block->block.first();
+        Ast* lastBody = node->block->block.last();
         KDevelop::RangeInRevision bodyRange(firstBody->startLine, firstBody->startCol, 
                                             lastBody->endLine, lastBody->endCol);
         openContext(node, bodyRange, KDevelop::DUContext::Namespace, moduleName);
         
-        for (auto* stmt : node->body) {
+        for (auto* stmt : node->block->block) {
             if (stmt) visitNode(stmt);
         }
         
@@ -269,28 +255,54 @@ void ContextBuilder::visitBaremodule(BaremoduleAst* node)
     }
 }
 
+static IdentifierAst* extractNameFromSignature(Ast* sig)
+{
+    if (!sig) return nullptr;
+    Ast* inner = sig;
+    while (inner) {
+        if (inner->astType == AstType::IdentifierAstType)
+            return static_cast<IdentifierAst*>(inner);
+        if (inner->astType == AstType::CallAstType)
+            inner = static_cast<CallAst*>(inner)->name;
+        else if (inner->astType == AstType::CurlyAstType)
+            inner = static_cast<CurlyAst*>(inner)->name;
+        else if (inner->astType == AstType::WhereAstType)
+            inner = static_cast<WhereAst*>(inner)->signature;
+        else
+            break;
+    }
+    return nullptr;
+}
+
 void ContextBuilder::visitStruct(StructAst* node)
 {
     if (!node) return;
     
+    qCDebug(KDEV_JULIA) << ">>> ContextBuilder::visitStruct, currentContext before:" << currentContext();
+    
     KDevelop::QualifiedIdentifier typeName;
-    if (node->name) {
-        typeName = KDevelop::QualifiedIdentifier(node->name->value);
+    IdentifierAst* nameIdent = extractNameFromSignature(node->signature);
+    if (nameIdent) {
+        typeName = KDevelop::QualifiedIdentifier(nameIdent->value);
     }
     
     // Struct body creates a context
-    if (!node->body.isEmpty()) {
-        Ast* firstBody = node->body.first();
-        Ast* lastBody = node->body.last();
+    if (node->block && !node->block->block.isEmpty()) {
+        Ast* firstBody = node->block->block.first();
+        Ast* lastBody = node->block->block.last();
         KDevelop::RangeInRevision bodyRange(firstBody->startLine, firstBody->startCol,
                                             lastBody->endLine, lastBody->endCol);
         openContext(node, bodyRange, KDevelop::DUContext::Class, typeName);
         
-        for (auto* stmt : node->body) {
-            if (stmt) visitNode(stmt);
-        }
+        qCDebug(KDEV_JULIA) << "  ContextBuilder: openContext done, currentContext:" << currentContext();
         
-        closeContext();
+        // Use base class visitor to visit children (Python pattern)
+        JuliaAstDefaultVisitor::visitStruct(node);
+        
+        // Only close if context is valid (prevent crash if cleared)
+        if (currentContext()) {
+            closeContext();
+        }
     }
 }
 
@@ -313,19 +325,20 @@ void ContextBuilder::visitMacro(MacroAst* node)
     if (!node) return;
     
     KDevelop::QualifiedIdentifier macroName;
-    if (node->name) {
-        macroName = KDevelop::QualifiedIdentifier(node->name->value);
+    IdentifierAst* nameIdent = extractNameFromSignature(node->signature);
+    if (nameIdent) {
+        macroName = KDevelop::QualifiedIdentifier(nameIdent->value);
     }
     
     // Macro body creates context
-    if (!node->body.isEmpty()) {
-        Ast* firstBody = node->body.first();
-        Ast* lastBody = node->body.last();
+    if (node->block && !node->block->block.isEmpty()) {
+        Ast* firstBody = node->block->block.first();
+        Ast* lastBody = node->block->block.last();
         KDevelop::RangeInRevision bodyRange(firstBody->startLine, firstBody->startCol,
                                             lastBody->endLine, lastBody->endCol);
         openContext(node, bodyRange, KDevelop::DUContext::Other, macroName);
         
-        for (auto* stmt : node->body) {
+        for (auto* stmt : node->block->block) {
             if (stmt) visitNode(stmt);
         }
         
@@ -338,9 +351,9 @@ void ContextBuilder::visitLet(LetAst* node)
     if (!node) return;
     
     // Let creates a new scope for bindings
-    if (!node->body.isEmpty()) {
-        Ast* firstBody = node->body.first();
-        Ast* lastBody = node->body.last();
+    if (!node->block.isEmpty()) {
+        Ast* firstBody = node->block.first();
+        Ast* lastBody = node->block.last();
         KDevelop::RangeInRevision bodyRange(firstBody->startLine, firstBody->startCol,
                                             lastBody->endLine, lastBody->endCol);
         openContext(node, bodyRange, KDevelop::DUContext::Other, KDevelop::QualifiedIdentifier());
@@ -351,7 +364,7 @@ void ContextBuilder::visitLet(LetAst* node)
         }
         
         // Then visit body
-        for (auto* stmt : node->body) {
+        for (auto* stmt : node->block) {
             if (stmt) visitNode(stmt);
         }
         
@@ -364,14 +377,14 @@ void ContextBuilder::visitDo(DoAst* node)
     if (!node) return;
     
     // Do block creates a context
-    if (!node->body.isEmpty()) {
-        Ast* firstBody = node->body.first();
-        Ast* lastBody = node->body.last();
+    if (!node->block.isEmpty()) {
+        Ast* firstBody = node->block.first();
+        Ast* lastBody = node->block.last();
         KDevelop::RangeInRevision bodyRange(firstBody->startLine, firstBody->startCol,
                                             lastBody->endLine, lastBody->endCol);
         openContext(node, bodyRange, KDevelop::DUContext::Function, KDevelop::QualifiedIdentifier());
         
-        for (auto* stmt : node->body) {
+        for (auto* stmt : node->block) {
             if (stmt) visitNode(stmt);
         }
         

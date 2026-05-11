@@ -20,7 +20,7 @@ public:
     }
     
     // Statement visitors - core
-    virtual void visitStatement(StatementAst*) {}
+    virtual void visitBlock(BlockAst*) {}
     virtual void visitFunctionDefinition(FunctionDefinitionAst*) {}
     virtual void visitReturn(ReturnAst*) {}
     virtual void visitAssignment(AssignmentAst*) {}
@@ -29,6 +29,7 @@ public:
     virtual void visitIf(IfAst*) {}
     virtual void visitTry(TryAst*) {}
     virtual void visitImport(ImportAst*) {}
+    virtual void visitSelectiveImport(ImportAst*) {}
     virtual void visitImportFrom(ImportAst*) {}
     virtual void visitGlobal(GlobalAst*) {}
     virtual void visitBreak(BreakAst*) {}
@@ -53,14 +54,11 @@ public:
     virtual void visitExpression(ExpressionAst*) {}
     virtual void visitCall(CallAst*) {}
     virtual void visitAttribute(AttributeAst*) {}
-    virtual void visitBinaryOperation(BinaryOperationAst*) {}
-    virtual void visitUnaryOperation(UnaryOperationAst*) {}
     virtual void visitNumber(NumberAst*) {}
     virtual void visitString(StringAst*) {}
     virtual void visitList(ListAst*) {}
     virtual void visitTuple(TupleAst*) {}
     virtual void visitDict(DictAst*) {}
-    virtual void visitSubscript(SubscriptAst*) {}
     virtual void visitStarred(StarredAst*) {}
     virtual void visitLambda(LambdaAst*) {}
     virtual void visitIfExpression(IfExpressionAst*) {}
@@ -68,29 +66,27 @@ public:
     // Julia-specific expression visitors
     virtual void visitParameter(ParameterAst*) {}
     virtual void visitTypeAnnotation(TypeAnnotationAst*) {}
+    virtual void visitSubtype(SubtypeAst*) {}
     virtual void visitCurly(CurlyAst*) {}
     virtual void visitImportPath(ImportPathAst*) {}
     virtual void visitGenerator(GeneratorAst*) {}
     virtual void visitInterpolatedString(InterpolatedStringAst*) {}
     virtual void visitMacroCall(MacroCallAst*) {}
     virtual void visitRef(RefAst*) {}
-    virtual void visitKwArg(KwArgAst*) {}
-    
-    // Pattern visitors
-    virtual void visitPattern(PatternAst*) {}
-    virtual void visitMatch(MatchAst*) {}
-    virtual void visitMatchCase(MatchCaseAst*) {}
-    
+    virtual void visitWhere(WhereAst*) {}
+    // add InAst
+    virtual void visitEllipsis(EllipsisAst*) {}
+
     // Other visitors
-    virtual void visitCode(CodeAst*) {}
-    virtual void visitArguments(ArgumentsAst*) {}
-    virtual void visitArg(ArgAst*) {}
-    virtual void visitKeyword(KeywordAst*) {}
+    virtual void visitCode(TopLevelAst*) {}
     virtual void visitAlias(AliasAst*) {}
-    virtual void visitExceptionHandler(ExceptionHandlerAst*) {}
+    virtual void visitCatch(CatchAst*) {}
     virtual void visitComprehension(ComprehensionAst*) {}
     virtual void visitSlice(SliceAst*) {}
     virtual void visitIdentifier(IdentifierAst*) {}
+    virtual void visitFilter(FilterAst*) {}
+    virtual void visitIn(InAst*) {}
+    virtual void visitIteration(IterationAst*) {}
 };
 
 } // namespace Julia
