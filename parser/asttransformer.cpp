@@ -79,6 +79,17 @@ FunctionSignatureAst* AstTransformer::parseFunctionSignature(Ast* rawNode, Ast* 
                 current = where->signature;
                 break;
             }
+            case AstType::TupleAstType: {
+                // Anonymous function(a,b): rawSignature is a TupleAst with elements a, b
+                auto* tuple = static_cast<TupleAst*>(current);
+                sig->positionalArgs = tuple->elements;
+                return sig;
+            }
+            case AstType::IdentifierAstType: {
+                // Anonymous function(a): rawSignature is a single IdentifierAst
+                sig->positionalArgs.append(current);
+                return sig;
+            }
             default:
                 return sig;
         }
@@ -205,8 +216,10 @@ Ast* AstTransformer::fromJson(const QJsonObject& json, Ast* parent)
         }
         case AstType::ReturnAstType: {
             ReturnAst* value = new ReturnAst(parent);
-            QJsonObject child = json.value(QLatin1String("children")).toObject();
-            value->value = fromJson(child, value);
+            QJsonArray children = json.value(QLatin1String("children")).toArray();
+            if (children.size()) {
+                value->value = fromJson(children[0].toObject(), value);
+            }
             setRange(value, json);
             return value;
         }

@@ -117,20 +117,26 @@ void DeclarationBuilder::visitNode(Ast* node)
 void DeclarationBuilder::visitFunctionDefinition(FunctionDefinitionAst* node)
 {
     auto* sig = node->signature;
-    if (!sig || !sig->name) return;
-    
-    qCDebug(KDEV_JULIA) << "DeclarationBuilder::visitFunctionDefinition:" << sig->name->value;
+    if (!sig) return;
     
     KDevelop::FunctionType::Ptr funcType(new KDevelop::FunctionType());
     
-    KDevelop::QualifiedIdentifier ident(sig->name->value);
-    KDevelop::RangeInRevision range = editorFindRange(sig->name, sig->name);
-    
-    {
-        KDevelop::DUChainWriteLocker lock(KDevelop::DUChain::lock());
-        KDevelop::FunctionDeclaration* funcDecl = DeclarationBuilderBase::openDeclaration<KDevelop::FunctionDeclaration>(ident, range);
-        funcDecl->setType(funcType);
-        funcDecl->setInSymbolTable(true);
+    if (sig->name) {
+        qCDebug(KDEV_JULIA) << "DeclarationBuilder::visitFunctionDefinition:" << sig->name->value;
+        
+        KDevelop::QualifiedIdentifier ident(sig->name->value);
+        KDevelop::RangeInRevision range = editorFindRange(sig->name, sig->name);
+        
+        {
+            KDevelop::DUChainWriteLocker lock(KDevelop::DUChain::lock());
+            KDevelop::FunctionDeclaration* funcDecl = DeclarationBuilderBase::openDeclaration<KDevelop::FunctionDeclaration>(ident, range);
+            funcDecl->setType(funcType);
+            funcDecl->setInSymbolTable(true);
+        }
+    } else {
+        // Anonymous function: create a context scope for parameter declarations
+        KDevelop::RangeInRevision range = editorFindRange(node, node);
+        openContext(node, range, KDevelop::DUContext::Function, KDevelop::QualifiedIdentifier());
     }
     
     openType(funcType);
@@ -164,12 +170,16 @@ void DeclarationBuilder::visitFunctionDefinition(FunctionDefinitionAst* node)
     closeType();
 
     // Create function body context and store on node->block so the
-    // use phase can reuse it (otherwise openContext pushes nullptr -> crash)
+    // use phase can reuse it (crash guard: body context must exist)
     if (node->block && !node->block->block.isEmpty()) {
         ContextBuilder::visitFunctionBody(node);
     }
 
-    DeclarationBuilderBase::closeDeclaration();
+    if (sig->name) {
+        DeclarationBuilderBase::closeDeclaration();
+    } else {
+        closeContext();
+    }
 }
 
 void DeclarationBuilder::processParameter(Ast* arg, KDevelop::FunctionType::Ptr funcType)
@@ -244,9 +254,8 @@ void DeclarationBuilder::visitAssignment(AssignmentAst* node)
     // Handle simple identifier assignment
     if (node->target->astType == AstType::IdentifierAstType) {
         IdentifierAst* ident = static_cast<IdentifierAst*>(node->target);
-        if (!ident || ident->context != ExpressionAst::Context::Store) {
-            return;
-        }
+
+        if (!ident) return;
         
         KDevelop::QualifiedIdentifier qident(ident->value);
         KDevelop::RangeInRevision range = editorFindRange(ident, ident);
@@ -271,6 +280,11 @@ void DeclarationBuilder::visitAssignment(AssignmentAst* node)
         }
         
         DeclarationBuilderBase::closeDeclaration();
+        
+        // Visit RHS through declaration chain for nested declarations
+        if (node->value) {
+            visitNode(node->value);
+        }
     }
     // Handle type annotation: x::T
     else if (node->target->astType == AstType::TypeAnnotationAstType) {
@@ -302,6 +316,11 @@ void DeclarationBuilder::visitAssignment(AssignmentAst* node)
                 
                 DeclarationBuilderBase::closeDeclaration();
             }
+        }
+        
+        // Visit RHS through declaration chain for nested declarations
+        if (node->value) {
+            visitNode(node->value);
         }
     }
 }
@@ -531,6 +550,11 @@ void DeclarationBuilder::visitConst(ConstAst* node)
             }
             
             DeclarationBuilderBase::closeDeclaration();
+        }
+        
+        // Visit RHS through declaration chain for nested declarations
+        if (node->value) {
+            visitNode(node->value);
         }
     }
 }

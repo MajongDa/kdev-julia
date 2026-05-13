@@ -103,14 +103,20 @@ void ContextBuilder::visitFunctionDefinition(FunctionDefinitionAst* node)
     if (!sig || !sig->rawSignature) return;
 
     // Visit rawSignature to process default value expressions for use tracking
-    // No openContext/closeContext here — parameter context was never stored on
-    // rawSignature during declaration phase (DeclarationBuilder overrides the base),
-    // so opening one during use phase would push nullptr and crash.
-    visitNode(sig->rawSignature);
+    // Only for named functions — anonymous functions have TupleAst as rawSignature
+    // whose elements are parameter identifiers, not use-tracking targets
+    if (sig->name) {
+        visitNode(sig->rawSignature);
+    }
 
     // Second, process function body - creates DUContext of type Other
     if (node->block && !node->block->block.isEmpty()) {
-        visitFunctionBody(node);
+        if (!node->block->context) {
+            // Declaration phase didn't store body context
+            JuliaAstDefaultVisitor::visitFunctionDefinition(node);
+        } else {
+            visitFunctionBody(node);
+        }
     }
 }
 
@@ -137,7 +143,7 @@ void ContextBuilder::visitFunctionBody(FunctionDefinitionAst* node)
     
     auto& body = node->block->block;
     if (body.isEmpty()) return;
-    
+
     Ast* firstBody = body.first();
     Ast* lastBody = body.last();
     KDevelop::RangeInRevision bodyRange(firstBody->startLine, firstBody->startCol,

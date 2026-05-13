@@ -15,6 +15,7 @@ public:
     ExpressionVisitor(ExpressionVisitor* parent, const KDevelop::DUContext* overrideContext = nullptr);
 
     void visitIdentifier(IdentifierAst* node) override;
+    void visitFunctionDefinition(FunctionDefinitionAst* node) override;
     void visitCall(CallAst* node) override;
     void visitAttribute(AttributeAst* node) override;
     void visitString(StringAst* node) override;

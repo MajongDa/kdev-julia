@@ -91,6 +91,9 @@ void UseBuilder::visitCall(CallAst* node)
     if (node->name) {
         visitNode(node->name);
     }
+    for (auto* arg : node->arguments) {
+        if (arg) visitNode(arg);
+    }
 
     qCDebug(KDEV_JULIA) << "<<< UseBuilder::visitCall DONE";
 }

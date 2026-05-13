@@ -55,6 +55,40 @@ KDevelop::AbstractType::Ptr ExpressionVisitor::encounterPreprocess(KDevelop::Abs
     return Helper::resolveAliasType(type);
 }
 
+void ExpressionVisitor::visitFunctionDefinition(FunctionDefinitionAst* node)
+{
+    if (!node || !node->signature) {
+        encounterUnknown();
+        return;
+    }
+
+    // Visit body statements to get return type
+    if (node->block) {
+        for (auto* stmt : node->block->block) {
+            if (stmt) visitNode(stmt);
+        }
+    }
+
+    auto funcType = new KDevelop::FunctionType();
+    auto returnType = lastType();
+    funcType->setReturnType(returnType ? returnType : unknownType());
+
+    auto mixedType = unknownType();
+    for (auto* arg : node->signature->positionalArgs) {
+        funcType->addArgument(mixedType);
+    }
+    for (auto* kw : node->signature->keywordArgs) {
+        if (kw->astType == AstType::ParameterAstType) {
+            auto* params = static_cast<ParameterAst*>(kw);
+            for (auto* kwarg : params->kwargs) {
+                funcType->addArgument(mixedType);
+            }
+        }
+    }
+
+    encounter(KDevelop::AbstractType::Ptr(funcType));
+}
+
 void ExpressionVisitor::visitIdentifier(IdentifierAst* node)
 {
     if (!node || node->astType != AstType::IdentifierAstType) {
