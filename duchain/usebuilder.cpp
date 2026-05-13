@@ -123,6 +123,15 @@ KDevelop::RangeInRevision UseBuilder::editorFindRange(Ast* fromNode, Ast* toNode
     return fromNode->range();
 }
 
+void UseBuilder::visitTypeAnnotation(TypeAnnotationAst* node)
+{
+    if (!node) return;
+    // Visit type (the annotation) for use tracking
+    if (node->type) visitNode(node->type);
+    // Visit value for use tracking (field name if declaration, or expression)
+    if (node->value) visitNode(node->value);
+}
+
 KDevelop::QualifiedIdentifier UseBuilder::identifierForNode(IdentifierAst* node)
 {
     if (!node) {

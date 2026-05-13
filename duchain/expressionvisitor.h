@@ -23,6 +23,7 @@ public:
     void visitList(ListAst* node) override;
     void visitTuple(TupleAst* node) override;
     void visitDict(DictAst* node) override;
+    void visitTypeAnnotation(TypeAnnotationAst* node) override;
 
 protected:
     KDevelop::AbstractType::Ptr unknownType() const override;

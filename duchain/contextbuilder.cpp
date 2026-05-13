@@ -302,7 +302,7 @@ void ContextBuilder::visitStruct(StructAst* node)
         
         qCDebug(KDEV_JULIA) << "  ContextBuilder: openContext done, currentContext:" << currentContext();
         
-        // Use base class visitor to visit children (Python pattern)
+        // Use base class visitor to visit children
         JuliaAstDefaultVisitor::visitStruct(node);
         
         // Only close if context is valid (prevent crash if cleared)
@@ -437,6 +437,13 @@ void ContextBuilder::visitComprehension(ComprehensionAst* node)
     JuliaAstDefaultVisitor::visitComprehension(node);
     
     closeContext();
+}
+
+void ContextBuilder::visitTypeAnnotation(TypeAnnotationAst* node)
+{
+    if (!node) return;
+    qCDebug(KDEV_JULIA) << "ContextBuilder::visitTypeAnnotation";
+    JuliaAstDefaultVisitor::visitTypeAnnotation(node);
 }
 
 void ContextBuilder::addImportedContexts()

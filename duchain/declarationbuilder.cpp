@@ -245,83 +245,40 @@ void DeclarationBuilder::processParameter(Ast* arg, KDevelop::FunctionType::Ptr 
         decl->setType(paramType);
         DeclarationBuilderBase::closeDeclaration();
     }
+
+}
+
+void DeclarationBuilder::declareIdentifier(IdentifierAst* ident, KDevelop::AbstractType::Ptr type)
+{
+    if (!ident) return;
+    KDevelop::QualifiedIdentifier qident(ident->value);
+    KDevelop::RangeInRevision range = editorFindRange(ident, ident);
+    KDevelop::DUChainWriteLocker lock;
+    auto* decl = openDeclaration<KDevelop::Declaration>(qident, range);
+    decl->setKind(KDevelop::Declaration::Instance);
+    decl->setInSymbolTable(true);
+    if (type) decl->setType(type);
+    closeDeclaration();
 }
 
 void DeclarationBuilder::visitAssignment(AssignmentAst* node)
 {
     if (!node || !node->target) return;
-    
-    // Handle simple identifier assignment
-    if (node->target->astType == AstType::IdentifierAstType) {
-        IdentifierAst* ident = static_cast<IdentifierAst*>(node->target);
 
-        if (!ident) return;
-        
-        KDevelop::QualifiedIdentifier qident(ident->value);
-        KDevelop::RangeInRevision range = editorFindRange(ident, ident);
-        
-        KDevelop::DUChainWriteLocker lock;
-        KDevelop::Declaration* decl = DeclarationBuilderBase::openDeclaration<KDevelop::Declaration>(qident, range);
-        decl->setKind(KDevelop::Declaration::Instance);
-        decl->setInSymbolTable(true);
-        
+    JuliaAstDefaultVisitor::visitAssignment(node);
+
+    if (node->target->astType == AstType::IdentifierAstType) {
+        auto* ident = static_cast<IdentifierAst*>(node->target);
+        KDevelop::AbstractType::Ptr type;
         if (node->value) {
-            lock.unlock();
-            ExpressionVisitor exprVisitor(currentContext());
-            exprVisitor.visitNode(node->value);
-            KDevelop::AbstractType::Ptr type = exprVisitor.lastType();
-            if (type) {
-                lock.lock();
-                decl->setType(type);
-            }
-            lock.unlock();
-        } else {
-            lock.unlock();
+            ExpressionVisitor v(currentContext());
+            v.visitNode(node->value);
+            type = v.lastType();
         }
-        
-        DeclarationBuilderBase::closeDeclaration();
-        
-        // Visit RHS through declaration chain for nested declarations
-        if (node->value) {
-            visitNode(node->value);
-        }
+        declareIdentifier(ident, type);
     }
-    // Handle type annotation: x::T
     else if (node->target->astType == AstType::TypeAnnotationAstType) {
-        TypeAnnotationAst* typeAnn = static_cast<TypeAnnotationAst*>(node->target);
-        if (typeAnn->value && typeAnn->value->astType == AstType::IdentifierAstType) {
-            IdentifierAst* ident = static_cast<IdentifierAst*>(typeAnn->value);
-            if (ident) {
-                KDevelop::QualifiedIdentifier qident(ident->value);
-                KDevelop::RangeInRevision range = editorFindRange(ident, ident);
-                
-                KDevelop::DUChainWriteLocker lock;
-                KDevelop::Declaration* decl = DeclarationBuilderBase::openDeclaration<KDevelop::Declaration>(qident, range);
-                decl->setKind(KDevelop::Declaration::Instance);
-                decl->setInSymbolTable(true);
-                
-                if (typeAnn->type) {
-                    lock.unlock();
-                    ExpressionVisitor exprVisitor(currentContext());
-                    exprVisitor.visitNode(typeAnn->type);
-                    KDevelop::AbstractType::Ptr type = exprVisitor.lastType();
-                    if (type) {
-                        lock.lock();
-                        decl->setType(type);
-                    }
-                    lock.unlock();
-                } else {
-                    lock.unlock();
-                }
-                
-                DeclarationBuilderBase::closeDeclaration();
-            }
-        }
-        
-        // Visit RHS through declaration chain for nested declarations
-        if (node->value) {
-            visitNode(node->value);
-        }
+        visitTypeAnnotation(static_cast<TypeAnnotationAst*>(node->target));
     }
 }
 
@@ -456,7 +413,7 @@ void DeclarationBuilder::visitStruct(StructAst* node)
     
     KDevelop::QualifiedIdentifier qident(nameIdent->value);
     KDevelop::RangeInRevision range = editorFindRange(nameIdent, nameIdent);
-    
+
     KDevelop::DUChainWriteLocker lock;
     KDevelop::Declaration* decl = DeclarationBuilderBase::openDeclaration<KDevelop::Declaration>(qident, range);
     decl->setKind(KDevelop::Declaration::Type);
@@ -465,6 +422,7 @@ void DeclarationBuilder::visitStruct(StructAst* node)
     DeclarationBuilderBase::closeDeclaration();
 
     ContextBuilder::visitStruct(node);
+
 }
 
 void DeclarationBuilder::visitAbstract(AbstractAst* node)
@@ -557,6 +515,40 @@ void DeclarationBuilder::visitConst(ConstAst* node)
             visitNode(node->value);
         }
     }
+}
+
+void DeclarationBuilder::visitTypeAnnotation(TypeAnnotationAst* node)
+{
+    if (!node) return;
+    if (!node->value || node->value->astType != AstType::IdentifierAstType) {
+        JuliaAstDefaultVisitor::visitTypeAnnotation(node);
+        return;
+    }
+
+    auto* ident = static_cast<IdentifierAst*>(node->value);
+    KDevelop::QualifiedIdentifier qident(ident->value);
+    KDevelop::RangeInRevision range = editorFindRange(ident, ident);
+
+    KDevelop::DUChainWriteLocker lock;
+    auto* decl = DeclarationBuilderBase::openDeclaration<KDevelop::Declaration>(qident, range);
+    decl->setKind(KDevelop::Declaration::Instance);
+    decl->setInSymbolTable(true);
+
+    if (node->type) {
+        lock.unlock();
+        ExpressionVisitor exprVisitor(currentContext());
+        exprVisitor.visitNode(node->type);
+        KDevelop::AbstractType::Ptr type = exprVisitor.lastType();
+        if (type) {
+            lock.lock();
+            decl->setType(type);
+        }
+        lock.unlock();
+    } else {
+        lock.unlock();
+    }
+
+    DeclarationBuilderBase::closeDeclaration();
 }
 
 static IdentifierAst* extractNameFromSignature(Ast* sig)

@@ -34,7 +34,6 @@ protected:
     KDevelop::DUContext* contextFromNode(Ast* node) override;
     KDevelop::QualifiedIdentifier identifierForNode(IdentifierAst* node) override;
 
-    // Declaration creation via virtual dispatch (Python-style)
     void visitNode(Ast* node) override;
     void visitFunctionDefinition(FunctionDefinitionAst* node) override;
     void visitAssignment(AssignmentAst* node) override;
@@ -51,10 +50,12 @@ protected:
     void visitPrimitive(PrimitiveAst* node) override;
     void visitMacro(MacroAst* node) override;
     void visitConst(ConstAst* node) override;
+    void visitTypeAnnotation(TypeAnnotationAst* node) override;
 
 private:
     JuliaEditorIntegrator* m_editor;
     void processParameter(Ast* arg, KDevelop::FunctionType::Ptr funcType);
+    void declareIdentifier(IdentifierAst* ident, KDevelop::AbstractType::Ptr type = {});
 };
 
 }

@@ -26,6 +26,7 @@ protected:
     void visitIdentifier(IdentifierAst* node) override;
     void visitCall(CallAst* node) override;
     void visitAttribute(AttributeAst* node) override;
+    void visitTypeAnnotation(TypeAnnotationAst* node) override;
 
 private:
     JuliaEditorIntegrator* m_editor;

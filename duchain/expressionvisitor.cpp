@@ -316,4 +316,23 @@ void ExpressionVisitor::visitDict(DictAst* node)
     encounterUnknown();
 }
 
+void ExpressionVisitor::visitTypeAnnotation(TypeAnnotationAst* node)
+{
+    if (!node) {
+        encounterUnknown();
+        return;
+    }
+    
+    if (node->type) {
+        visitNode(node->type);
+        KDevelop::AbstractType::Ptr type = lastType();
+        if (type) {
+            encounter(type);
+            return;
+        }
+    }
+    
+    encounterUnknown();
+}
+
 }

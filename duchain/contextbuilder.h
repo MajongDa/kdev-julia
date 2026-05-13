@@ -53,6 +53,7 @@ protected:
     void visitAssignment(AssignmentAst* node) override;
     void visitLambda(LambdaAst* node) override;
     void visitImport(ImportAst* node) override;
+    void visitTypeAnnotation(TypeAnnotationAst* node) override;
     
     // Generators/Comprehensions
     void visitGenerator(GeneratorAst* node) override;
